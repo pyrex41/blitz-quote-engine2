@@ -1,0 +1,13 @@
+modules = ["python-3.11", "python-3.12"]
+run = "uv run uvicorn main:app --reload"
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["sh", "-c", "uv run uvicorn main:app --reload"]
+
+[[ports]]
+localPort = 8000
+externalPort = 80
+exposeLocalhost = true

@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from app.routers import quotes  # Import your router
-import libsql_experimental as libsql
 import os
 import dotenv
 
@@ -15,9 +14,6 @@ auth_token = os.getenv("NEW_QUOTE_DB_KEY")
 print(f"sync_url: {sync_url}")
 print(f"auth_token: {auth_token}")
 
-#conn = libsql.connect("msr_replica.db", sync_url=sync_url, auth_token=auth_token, sync_interval=1000)
-
-#conn.sync()
 
 
 
