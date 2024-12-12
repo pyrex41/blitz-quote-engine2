@@ -6,6 +6,7 @@ channel = "stable-24_05"
 
 [deployment]
 run = ["sh", "-c", "uv run uvicorn app.main:app"]
+deploymentTarget = "cloudrun"
 
 [[ports]]
 localPort = 8000
