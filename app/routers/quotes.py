@@ -283,6 +283,7 @@ async def fetch_quotes_from_db(db: Session, state: str, zip_code: str, county: s
                              naic: Optional[List[str]] = None,
                              effective_date: Optional[str] = None) -> List[QuoteResponse]:
     """Fetch quotes from the database"""
+    print(f"effective_date: {effective_date}")
     query = db.query(GroupMapping, CompanyName.name).outerjoin(
         CompanyName, GroupMapping.naic == CompanyName.naic
     ).filter(
@@ -382,15 +383,7 @@ async def get_quotes(
 
     default_effective_date = get_effective_date()
     effective_date_processed = effective_date or default_effective_date
-
-    if effective_date_processed != default_effective_date:
-        print("Falling back to CSG for non-default effective date for plans: ", plans)
-        results = await fetch_quotes_from_csg(
-            zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date_processed
-        )
-        sorted_results = sorted(results, key=lambda x: x.naic or '')
-        print(f"Sorted results: {sorted_results}")
-        return sorted_results
+    print(f"effective_date_processed: {effective_date_processed}")
 
     try:
         # Try database first
@@ -401,7 +394,7 @@ async def get_quotes(
         for plan in plans:
             print(f"Fetching quotes for plan {plan}")
             db_results = await fetch_quotes_from_db(
-                db, state, zip_code, county, [age], tobacco, gender, plan, naic
+                db, state, zip_code, county, [age], tobacco, gender, plan, naic, effective_date_processed
             )
             if db_results:
                 print(f"Found {len(db_results)} quotes for plan {plan}")
