@@ -47,11 +47,7 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 # Check if we're running on Replit
 IS_REPLIT = os.getenv('REPLIT', 'False').lower() == 'true'
 
-if IS_REPLIT:
-    from replit import db
-    API_KEYS = db.get("api_keys", set())
-else:
-    API_KEYS = set(['yVujgWOYsLOJxGaicK69TPYVKgwMmqgb'])
+API_KEYS = set(['yVujgWOYsLOJxGaicK69TPYVKgwMmqgb'])
 
 def get_state_specific_plan(state: str, default_plan: Optional[str] = None) -> Optional[str]:
     """Get state-specific plan override if applicable"""
