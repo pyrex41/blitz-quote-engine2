@@ -1,0 +1,361 @@
+2024-12-11 19:59:26,698 - httpx - INFO - HTTP Request: GET https://medicare-school-quote-tool.herokuapp.com/api/csg_token "HTTP/1.1 200 OK"
+2024-12-11 19:59:26,699 - root - INFO - Fetched_token is c1cb9f5d89552b7817232e2561a4ff3aeeede73c83ffd19c24c03c202f93019b
+2024-12-11 19:59:26,699 - root - INFO - Found state/date pairs to process: [('AL', '2025-01-01', '60984'), ('AL', '2025-01-01', '88595')]
+2024-12-11 19:59:26,700 - root - INFO - Processing 2 tasks
+2024-12-11 19:59:29,537 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?zip5=35115&age=65&gender=M&tobacco=0&effective_date=2025-01-01&naic=88595&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:29,658 - root - WARNING - County not found in sc_dict: BULLOCK; no 1:1 zip code found
+2024-12-11 19:59:29,658 - root - WARNING - County not found in sc_dict: CRENSHAW; no 1:1 zip code found
+2024-12-11 19:59:29,658 - root - INFO - 67 counties for 88595
+2024-12-11 19:59:29,658 - root - INFO - 67 counties processed for 88595
+2024-12-11 19:59:29,658 - root - INFO - county_zip: 35963
+2024-12-11 19:59:29,676 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?zip5=35045&age=65&gender=M&tobacco=0&effective_date=2025-01-01&naic=60984&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:29,777 - root - WARNING - County not found in sc_dict: BULLOCK; no 1:1 zip code found
+2024-12-11 19:59:29,777 - root - WARNING - County not found in sc_dict: CRENSHAW; no 1:1 zip code found
+2024-12-11 19:59:29,777 - root - INFO - 59 counties for 60984
+2024-12-11 19:59:29,777 - root - INFO - 59 counties processed for 60984
+2024-12-11 19:59:29,777 - root - INFO - county_zip: 35055
+2024-12-11 19:59:31,556 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?zip5=35963&age=65&gender=M&tobacco=0&effective_date=2025-01-01&naic=88595&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:31,564 - root - INFO - lookup_list: [{'SUMTER', 'MADISON', 'CULLMAN', 'MARION', 'JEFFERSON', 'LOWNDES', 'RUSSELL', 'ST. CLAIR', 'CALHOUN', 'GREENE', 'BARBOUR', 'CHAMBERS', 'CHEROKEE', 'HENRY', 'JACKSON', 'BULLOCK', 'WINSTON', 'CONECUH', 'PICKENS', 'COOSA', 'COFFEE', 'CLARKE', 'CHOCTAW', 'HOUSTON', 'BIBB', 'DALLAS', 'LAMAR', 'LEE', 'MONTGOMERY', 'WASHINGTON', 'MARENGO', 'GENEVA', 'BUTLER', 'RANDOLPH', 'BLOUNT', 'HALE', 'MONROE', 'LIMESTONE', 'FAYETTE', 'DALE', 'COLBERT', 'TUSCALOOSA', 'TALLAPOOSA', 'SHELBY', 'LAWRENCE', 'MOBILE', 'WALKER', 'PERRY', 'BALDWIN', 'ETOWAH', 'CLEBURNE', 'PIKE', 'COVINGTON', 'LAUDERDALE', 'FRANKLIN', 'DE KALB', 'AUTAUGA', 'MACON', 'MORGAN', 'ESCAMBIA', 'CHILTON', 'WILCOX', 'MARSHALL', 'ELMORE', 'CLAY', 'TALLADEGA', 'CRENSHAW'}]
+2024-12-11 19:59:31,565 - root - INFO - mapping_type: county
+2024-12-11 19:59:31,922 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?zip5=35055&age=65&gender=M&tobacco=0&effective_date=2025-01-01&naic=60984&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:31,927 - root - INFO - county_zip: 35963
+2024-12-11 19:59:33,284 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?zip5=35963&age=65&gender=M&tobacco=0&effective_date=2025-01-01&naic=60984&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:33,300 - root - INFO - lookup_list: [{'SUMTER', 'MADISON', 'CULLMAN', 'MARION', 'JEFFERSON', 'LOWNDES', 'RUSSELL', 'ST. CLAIR', 'CALHOUN', 'GREENE', 'CHAMBERS', 'BARBOUR', 'CHEROKEE', 'HENRY', 'JACKSON', 'BULLOCK', 'WINSTON', 'CONECUH', 'PICKENS', 'COOSA', 'COFFEE', 'CHOCTAW', 'CLARKE', 'HOUSTON', 'BIBB', 'LAMAR', 'DALLAS', 'MONTGOMERY', 'LEE', 'WASHINGTON', 'MARENGO', 'GENEVA', 'BUTLER', 'RANDOLPH', 'BLOUNT', 'HALE', 'MONROE', 'LIMESTONE', 'FAYETTE', 'DALE', 'COLBERT', 'TUSCALOOSA', 'TALLAPOOSA', 'SHELBY', 'LAWRENCE', 'MOBILE', 'WALKER', 'PERRY', 'BALDWIN', 'ETOWAH', 'CLEBURNE', 'PIKE', 'COVINGTON', 'LAUDERDALE', 'FRANKLIN', 'DE KALB', 'AUTAUGA', 'MACON', 'MORGAN', 'ESCAMBIA', 'CHILTON', 'WILCOX', 'MARSHALL', 'ELMORE', 'CLAY', 'TALLADEGA', 'CRENSHAW'}]
+2024-12-11 19:59:33,300 - root - INFO - mapping_type: county
+2024-12-11 19:59:33,419 - root - INFO - Processing 112 rate tasks
+2024-12-11 19:59:37,506 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=65&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:37,511 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,511 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,540 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=80&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:37,542 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,542 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,589 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=65&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:37,590 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,590 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,639 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=95&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:37,640 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,640 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,770 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=65&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:37,791 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,791 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,840 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=75&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:37,841 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=70&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:37,841 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,841 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,843 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,843 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,848 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=80&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:37,849 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,849 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,892 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=65&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:37,898 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,898 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,954 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=85&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:37,955 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:37,955 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,100 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=70&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,105 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,105 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,224 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=65&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,234 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,234 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,296 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=70&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,304 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,304 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,350 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=90&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,353 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,353 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,363 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=90&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,365 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,365 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,386 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=70&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,396 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=80&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,425 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=80&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,429 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,430 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,448 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=75&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,455 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,456 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,464 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=85&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,468 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,468 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,484 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,484 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,506 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,507 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,540 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=90&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,545 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,545 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,609 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=70&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,612 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,613 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,678 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=70&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,684 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,685 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,702 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=90&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,712 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,713 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,824 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=95&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,835 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,835 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,851 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=65&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,863 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,863 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,875 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=85&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,890 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,890 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,901 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=75&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,904 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,904 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,906 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=90&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,907 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,907 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,966 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=85&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,976 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=75&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,982 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=95&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:38,984 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,984 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,988 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,988 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,990 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:38,990 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,009 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=65&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,014 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,014 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,049 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=75&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,056 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,056 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,061 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=75&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,068 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=75&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,069 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,069 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,072 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,072 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,101 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=70&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,103 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,103 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,136 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=70&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,148 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=85&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,154 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,154 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,156 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,157 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,210 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=80&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,215 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,215 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,300 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=80&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,302 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=90&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,306 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,306 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,310 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=75&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,311 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,311 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,313 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,313 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,318 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=85&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,323 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,323 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,345 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=95&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,356 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=85&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,358 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,358 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,366 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,366 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,522 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=80&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,531 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,531 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,574 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=65&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,584 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,584 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,687 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=0&age=95&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,697 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,697 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,898 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=90&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:39,918 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:39,918 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:40,075 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=65&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,077 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,077 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,135 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=70&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,137 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,137 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,301 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=80&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,303 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,303 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,527 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=75&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,532 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,532 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,539 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=90&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,541 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,541 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,544 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=80&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,546 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,546 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,575 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=95&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,576 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,576 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,620 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=65&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,621 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,621 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,655 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=80&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,658 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,658 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,672 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=65&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,678 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,678 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,710 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=80&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,715 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:40,715 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:40,772 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=95&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,785 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:40,785 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:40,800 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=75&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,801 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,802 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,824 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=95&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,826 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:40,826 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:40,890 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=85&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,891 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,891 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,904 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=90&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,905 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,905 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,985 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=85&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,995 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:40,995 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:40,998 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=95&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:40,999 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:40,999 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,086 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=75&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,086 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,086 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,208 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=65&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,213 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,213 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,216 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=95&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,220 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,220 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,266 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=80&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,267 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,267 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,275 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=75&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,277 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,277 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,399 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=90&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,405 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=85&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,409 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,409 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,412 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,412 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,731 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=70&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,737 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,737 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,769 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=85&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,771 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,771 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,825 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=75&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,827 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,827 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,866 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=80&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,868 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,868 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,891 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=80&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,892 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,892 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,945 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=90&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:41,947 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:41,947 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:42,064 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=75&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:42,066 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:42,066 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:42,108 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=95&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:42,111 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:42,111 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:42,408 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=90&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:42,412 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:42,413 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:42,830 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=90&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:42,837 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:42,837 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,302 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=70&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:43,305 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,305 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,318 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=95&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:43,319 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,319 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,371 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=85&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:43,373 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,373 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,510 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=90&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:43,517 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,517 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,564 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=85&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:43,570 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,570 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,597 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=90&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:43,603 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,604 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,711 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=60984&effective_date=2025-01-01&zip5=36277&tobacco=1&age=95&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:43,713 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:43,713 - root - INFO - Processing quote: AL:60984:1
+2024-12-11 19:59:43,951 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=95&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:43,953 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:43,953 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:44,161 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=85&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:44,165 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:44,165 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:45,124 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=95&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:45,127 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:45,128 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:45,208 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=65&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:45,211 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:45,211 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:46,129 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=65&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:46,130 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:46,130 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:46,717 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=70&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:46,720 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:46,720 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:47,202 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=65&gender=M&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:47,205 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:47,205 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:47,969 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=70&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:47,971 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:47,971 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:48,478 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=65&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:48,480 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:48,480 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:49,240 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=70&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:49,244 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:49,244 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:49,409 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=85&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:49,410 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:49,411 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:50,424 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=90&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:50,428 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:50,428 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:50,716 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=75&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:50,721 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:50,721 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:51,782 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=80&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:51,785 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:51,786 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:52,775 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=85&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:52,779 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:52,779 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:53,876 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=0&age=95&gender=F&plan=G&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:53,879 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:53,879 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:54,995 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=70&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:55,207 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:55,208 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:56,024 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=70&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:56,028 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:56,029 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:57,150 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=75&gender=M&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:57,152 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:57,152 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:58,514 - httpx - INFO - HTTP Request: GET https://csgapi.appspot.com/v1/med_supp/quotes.json?select=0&naic=88595&effective_date=2025-01-01&zip5=36532&tobacco=1&age=80&gender=F&plan=N&apply_discounts=0 "HTTP/1.1 200 OK"
+2024-12-11 19:59:58,517 - root - INFO - Processing quote: AL:88595:1
+2024-12-11 19:59:58,517 - root - INFO - Processing quote: AL:88595:1

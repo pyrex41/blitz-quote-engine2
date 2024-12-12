@@ -21,7 +21,7 @@ import time
 from statistics import mean, median
 from normalize_county import normalize_county_name
 from thefuzz import process
-
+from pprint import pprint
 dotenv.load_dotenv()
 
 router = APIRouter()
@@ -414,7 +414,9 @@ async def get_quotes(
             )
             tasks.append(task)
         if naics_to_fetch:
+            print(f"Fetching quotes from CSG for {len(naics_to_fetch)} plans with missing NAICs")
             for plan, naics in naics_to_fetch.items():
+                print(f"Fetching quotes for plan {plan} with NAICs: {naics}")
                 task = fetch_quotes_from_csg(
                     zip_code, county, state, [age], tobacco, gender, [plan], naics, effective_date_processed
                 )
@@ -422,10 +424,16 @@ async def get_quotes(
 
         # Gather all CSG results and flatten properly
         if tasks:
+            print(f"Gathering {len(tasks)} CSG tasks")
             csg_results = await asyncio.gather(*tasks)
+            print(f"Received {len(csg_results)} CSG result lists")
+            pprint(csg_results)
             for result_list in csg_results:
                 if result_list:  # Check if the result list is not empty
+                    print(f"Adding {len(result_list)} quotes from CSG result list")
                     results.extend(result_list)
+                else:
+                    print("Empty CSG result list, skipping")
 
         sorted_results = sorted(results, key=lambda x: x.naic or '')
         print(f"Sorted results: {sorted_results}")
