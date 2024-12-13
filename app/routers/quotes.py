@@ -406,7 +406,7 @@ async def get_quotes(
 
     try:
         if all_carriers:    
-            return await fetch_quotes_from_csg(db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date_processed, all_carriers=True)
+            return await fetch_quotes_from_csg(db, zip_code, county, state, [age], tobacco, gender, plans, [], effective_date_processed, all_carriers=True)
         else:
             # Try database first
             results = []
