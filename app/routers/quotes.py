@@ -354,7 +354,7 @@ async def fetch_quotes_from_db(db: Session, state: str, zip_code: str, county: s
                     
                 if quotes:
                     for quote in quotes:
-                        quote.discount_category = discount_category if discount_category else ''
+                        quote.discount_category = discount_category 
                     results.append(QuoteResponse(
                         naic=mapping.naic,
                         group=mapping.naic_group,
