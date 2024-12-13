@@ -172,7 +172,7 @@ def get_api_key(api_key_header: str = Security(api_key_header)):
     return api_key_header
 
 
-async def fetch_quotes_from_csg(zip_code: str, county: str, state: str, 
+async def fetch_quotes_from_csg(db: Session, zip_code: str, county: str, state: str, 
                               age: List[int], tobacco: Optional[bool] = None, 
                               gender: Optional[str] = None, plans: List[str] = None,
                               naic: Optional[List[str]] = None,
@@ -226,6 +226,10 @@ async def fetch_quotes_from_csg(zip_code: str, county: str, state: str,
             
         queries = []
 
+
+        base_naic_list = get_naic_list(db, state)
+        print(f"base_naic_list: {base_naic_list}")
+
         for tobacco in tobaccoOptions:
             for gender in genderOptions:
                 for a in age:
@@ -241,6 +245,8 @@ async def fetch_quotes_from_csg(zip_code: str, county: str, state: str,
                         }
                         if naic:
                             query_data['naic'] = naic
+                        else:
+                            query_data['naic'] = base_naic_list
                         queries.append(query_data)
 
         raw_tasks = [csg_client.fetch_quote(**query) for query in queries]
@@ -421,7 +427,7 @@ async def get_quotes(
         if plans_to_fetch:
             print(f"Fetching quotes from CSG for {len(plans_to_fetch)} plans")
             task = fetch_quotes_from_csg(
-                zip_code, county, state, [age], tobacco, gender, plans_to_fetch, naic, effective_date_processed
+                db, zip_code, county, state, [age], tobacco, gender, plans_to_fetch, naic, effective_date_processed
             )
             tasks.append(task)
         if naics_to_fetch:
@@ -429,7 +435,7 @@ async def get_quotes(
             for plan, naics in naics_to_fetch.items():
                 print(f"Fetching quotes for plan {plan} with NAICs: {naics}")
                 task = fetch_quotes_from_csg(
-                    zip_code, county, state, [age], tobacco, gender, [plan], naics, effective_date_processed
+                    db, zip_code, county, state, [age], tobacco, gender, [plan], naics, effective_date_processed
                 )
                 tasks.append(task)
 
@@ -454,9 +460,12 @@ async def get_quotes(
         # Log the error and fall back to CSG
         print(f"Database query failed: {str(e)}")
         return await fetch_quotes_from_csg(
-            zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date_processed
+            db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date_processed
         )
-
+    
+def get_naic_list(db: Session, state: str) -> List[str]:
+    res = db.query(GroupMapping.naic).distinct().filter(GroupMapping.state == state).all()
+    return [r[0] for r in res]
 @router.get("/quotes/csg", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
 async def get_quotes_from_csg(
     zip_code: str,
@@ -468,6 +477,7 @@ async def get_quotes_from_csg(
     county: Optional[str] = None,
     naic: Optional[List[str]] = Query(None),
     effective_date: Optional[str] = None,
+    db: Session = Depends(get_db),
 ):
     """Get quotes directly from CSG API for testing"""
     # Validate and process inputs
@@ -484,164 +494,9 @@ async def get_quotes_from_csg(
     
     # Fetch quotes from CSG (pass age as a single-item list for compatibility)
     return await fetch_quotes_from_csg(
-        zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date
+        db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date
     )
 
-@router.get("/quotes/compare", response_model=QuoteComparison, dependencies=[Depends(get_api_key)])
-async def compare_quotes(
-    zip_code: str,
-    state: str,
-    age: int,
-    tobacco: bool,
-    gender: str,
-    plan: str,
-    county: Optional[str] = None,
-    naic: Optional[List[str]] = Query(None),
-    effective_date: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    """Compare quotes from database and CSG API"""
-    # Validate and process inputs
-    zip_code, state, county, gender = validate_inputs(zip_code, state, county, gender)
-    
-    # Fetch quotes from both sources (pass age as a single-item list for compatibility)
-    db_quotes = await fetch_quotes_from_db(
-        db, state, zip_code, county, [age], tobacco, gender, plan, naic, effective_date
-    )
-    
-    csg_quotes = await fetch_quotes_from_csg(
-        zip_code, county, state, [age], tobacco, gender, [plan], naic, effective_date
-    )
-    
-    # Compare quotes and identify differences
-    differences = []
-    has_differences = False
-    
-    # Create lookup dictionaries for easier comparison
-    db_lookup = {(q.naic, quote.age, quote.plan): quote.rate 
-                 for q in db_quotes 
-                 for quote in q.quotes}
-    csg_lookup = {(q.naic, quote.age, quote.plan): quote.rate 
-                  for q in csg_quotes 
-                  for quote in q.quotes}
-    
-    # Check for quotes in DB that differ or don't exist in CSG
-    for naic_age_plan, db_rate in db_lookup.items():
-        naic, age, plan = naic_age_plan
-        csg_rate = csg_lookup.get(naic_age_plan)
-        if csg_rate is None:
-            differences.append(f"Quote exists in DB but not in CSG: NAIC={naic}, Age={age}, Plan={plan}")
-            has_differences = True
-        elif abs(db_rate - csg_rate) > 0.01:  # Allow for small floating point differences
-            differences.append(
-                f"Rate difference for NAIC={naic}, Age={age}, Plan={plan}: "
-                f"DB=${db_rate:.2f} vs CSG=${csg_rate:.2f}"
-            )
-            has_differences = True
-    
-    # Check for quotes in CSG that don't exist in DB
-    for naic_age_plan in csg_lookup:
-        if naic_age_plan not in db_lookup:
-            naic, age, plan = naic_age_plan
-            differences.append(f"Quote exists in CSG but not in DB: NAIC={naic}, Age={age}, Plan={plan}")
-            has_differences = True
-    
-    return QuoteComparison(
-        has_differences=has_differences,
-        db_quotes=db_quotes,
-        csg_quotes=csg_quotes,
-        differences=differences if has_differences else None
-    )
-
-class TimingResult(BaseModel):
-    approach: str
-    times: List[float]
-    average_time: float
-    total_quotes: int
-
-class TimingResponse(BaseModel):
-    single_query_results: TimingResult
-    chunked_query_results: TimingResult
-    chunk_size: int
-    iterations: int
-
-@router.get("/quotes/time", response_model=TimingResponse, dependencies=[Depends(get_api_key)])
-async def benchmark_quote_approaches(
-    iterations: int = 10,
-    chunk_size: int = 3,
-):
-    """Benchmark different approaches to fetching quotes for multiple NAICs"""
-    # Validate inputs
-    zip_code = "90210"
-    state = "CA"
-    county = "Los Angeles"
-    age = 65
-    tobacco = False
-    gender = "M"
-    plan = "G"
-    
-    naics = [
-        "20699",
-        "79413",
-        "71412",
-        "82538",
-        "60380",
-        "60984"
-    ]
-
-    # Approach 1: Single query with all NAICs
-    single_query_times = []
-    single_query_total_quotes = 0
-    
-    for _ in range(iterations):
-        start_time = time.time()
-        results = await fetch_quotes_from_csg(
-            zip_code, county, state, [age], tobacco, gender, [plan], naics
-        )
-        single_query_times.append(time.time() - start_time)
-        single_query_total_quotes += sum(len(r.quotes) for r in results)
-
-    # Approach 2: Multiple queries with chunked NAICs
-    chunked_query_times = []
-    chunked_query_total_quotes = 0
-    
-    for _ in range(iterations):
-        start_time = time.time()
-        all_results = []
-        
-        # Split NAICs into chunks
-        for i in range(0, len(naics), chunk_size):
-            naic_chunk = naics[i:i + chunk_size]
-            chunk_results = await fetch_quotes_from_csg(
-                zip_code, county, state, [age], tobacco, gender, [plan], naic_chunk
-            )
-            all_results.extend(chunk_results)
-            
-        chunked_query_times.append(time.time() - start_time)
-        chunked_query_total_quotes += sum(len(r.quotes) for r in all_results)
-
-    return TimingResponse(
-        single_query_results=TimingResult(
-            approach="single_query",
-            times=single_query_times,
-            average_time=mean(single_query_times),
-            min_time=min(single_query_times),
-            max_time=max(single_query_times),
-            median_time=median(single_query_times),
-            total_quotes=single_query_total_quotes // iterations
-        ),
-        chunked_query_results=TimingResult(
-            approach="chunked_queries",
-            times=chunked_query_times,
-            average_time=mean(chunked_query_times),
-            min_time=min(chunked_query_times),
-            max_time=max(chunked_query_times),
-            median_time=median(chunked_query_times),
-            total_quotes=chunked_query_total_quotes // iterations
-        ),
-        chunk_size=chunk_size,
-        iterations=iterations
-    )
 
 class QuoteRequest(BaseModel):
     zip_code: str
