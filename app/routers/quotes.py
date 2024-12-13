@@ -176,7 +176,8 @@ async def fetch_quotes_from_csg(db: Session, zip_code: str, county: str, state: 
                               age: List[int], tobacco: Optional[bool] = None, 
                               gender: Optional[str] = None, plans: List[str] = None,
                               naic: Optional[List[str]] = None,
-                              effective_date: Optional[str] = None) -> List[QuoteResponse]:
+                              effective_date: Optional[str] = None,
+                              all_carriers: bool = False) -> List[QuoteResponse]:
     """Fetch quotes directly from CSG API"""
     try:
         # Validate required parameters
@@ -243,7 +244,9 @@ async def fetch_quotes_from_csg(db: Session, zip_code: str, county: str, state: 
                             'plan': get_state_specific_plan(state, plan),
                             'effective_date': effective_date_processed,
                         }
-                        if naic:
+                        if all_carriers:
+                            pass
+                        elif naic:
                             query_data['naic'] = naic
                         else:
                             query_data['naic'] = base_naic_list
@@ -388,79 +391,85 @@ async def get_quotes(
     county: Optional[str] = None,
     naic: Optional[List[str]] = Query(None),
     effective_date: Optional[str] = None,
+    carriers: Optional[str] = Query("supported", regex="^(all|supported)$"),
     db: Session = Depends(get_db),
 ):
     """Get quotes from database with CSG fallback"""
     # Validate and process inputs
     zip_code, state, county, gender = validate_inputs(zip_code, state, county, gender)
 
+    all_carriers = carriers == "all"
+
     default_effective_date = get_effective_date()
     effective_date_processed = effective_date or default_effective_date
     print(f"effective_date_processed: {effective_date_processed}")
 
     try:
-        # Try database first
-        results = []
-        print(f"Fetching quotes from database for {len(plans)} plans")
-        plans_to_fetch = []
-        naics_to_fetch = {}
-        for plan in plans:
-            print(f"Fetching quotes for plan {plan}")
-            db_results = await fetch_quotes_from_db(
-                db, state, zip_code, county, [age], tobacco, gender, plan, naic, effective_date_processed
-            )
-            if db_results:
-                print(f"Found {len(db_results)} quotes for plan {plan}")
-                results.extend(db_results)
-                if naic:  # Only check missing NAICs if we have a NAIC filter
-                    for n in naic:
-                        if n not in [q.naic for q in results]:
-                            d = naics_to_fetch.get(plan, [])
-                            d.append(n)
-                            naics_to_fetch[plan] = d
-            else:
-                print(f"No quotes found for plan {plan} in database")
-                plans_to_fetch.append(plan)
+        if all_carriers:    
+            return await fetch_quotes_from_csg(db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date_processed, all_carriers=True)
+        else:
+            # Try database first
+            results = []
+            print(f"Fetching quotes from database for {len(plans)} plans")
+            plans_to_fetch = []
+            naics_to_fetch = {}
+            for plan in plans:
+                print(f"Fetching quotes for plan {plan}")
+                db_results = await fetch_quotes_from_db(
+                    db, state, zip_code, county, [age], tobacco, gender, plan, naic, effective_date_processed
+                )
+                if db_results:
+                    print(f"Found {len(db_results)} quotes for plan {plan}")
+                    results.extend(db_results)
+                    if naic:  # Only check missing NAICs if we have a NAIC filter
+                        for n in naic:
+                            if n not in [q.naic for q in results]:
+                                d = naics_to_fetch.get(plan, [])
+                                d.append(n)
+                                naics_to_fetch[plan] = d
+                else:
+                    print(f"No quotes found for plan {plan} in database")
+                    plans_to_fetch.append(plan)
 
-        # Fetch missing quotes from CSG
-        tasks = []
-        if plans_to_fetch:
-            print(f"Fetching quotes from CSG for {len(plans_to_fetch)} plans")
-            task = fetch_quotes_from_csg(
-                db, zip_code, county, state, [age], tobacco, gender, plans_to_fetch, naic, effective_date_processed
-            )
-            tasks.append(task)
-        if naics_to_fetch:
-            print(f"Fetching quotes from CSG for {len(naics_to_fetch)} plans with missing NAICs")
-            for plan, naics in naics_to_fetch.items():
-                print(f"Fetching quotes for plan {plan} with NAICs: {naics}")
+            # Fetch missing quotes from CSG
+            tasks = []
+            if plans_to_fetch:
+                print(f"Fetching quotes from CSG for {len(plans_to_fetch)} plans")
                 task = fetch_quotes_from_csg(
-                    db, zip_code, county, state, [age], tobacco, gender, [plan], naics, effective_date_processed
+                    db, zip_code, county, state, [age], tobacco, gender, plans_to_fetch, naic, effective_date_processed, all_carriers=all_carriers
                 )
                 tasks.append(task)
+            if naics_to_fetch:
+                print(f"Fetching quotes from CSG for {len(naics_to_fetch)} plans with missing NAICs")
+                for plan, naics in naics_to_fetch.items():
+                    print(f"Fetching quotes for plan {plan} with NAICs: {naics}")
+                    task = fetch_quotes_from_csg(
+                        db, zip_code, county, state, [age], tobacco, gender, [plan], naics, effective_date_processed, all_carriers=True
+                    )
+                    tasks.append(task)
 
-        # Gather all CSG results and flatten properly
-        if tasks:
-            print(f"Gathering {len(tasks)} CSG tasks")
-            csg_results = await asyncio.gather(*tasks)
-            print(f"Received {len(csg_results)} CSG result lists")
-            pprint(csg_results)
-            for result_list in csg_results:
-                if result_list:  # Check if the result list is not empty
-                    print(f"Adding {len(result_list)} quotes from CSG result list")
-                    results.extend(result_list)
-                else:
-                    print("Empty CSG result list, skipping")
+            # Gather all CSG results and flatten properly
+            if tasks:
+                print(f"Gathering {len(tasks)} CSG tasks")
+                csg_results = await asyncio.gather(*tasks)
+                print(f"Received {len(csg_results)} CSG result lists")
+                pprint(csg_results)
+                for result_list in csg_results:
+                    if result_list:  # Check if the result list is not empty
+                        print(f"Adding {len(result_list)} quotes from CSG result list")
+                        results.extend(result_list)
+                    else:
+                        print("Empty CSG result list, skipping")
 
-        sorted_results = sorted(results, key=lambda x: x.naic or '')
-        print(f"Sorted results: {sorted_results}")
-        return sorted_results
+            sorted_results = sorted(results, key=lambda x: x.naic or '')
+            print(f"Sorted results: {sorted_results}")
+            return sorted_results
 
     except Exception as e:
         # Log the error and fall back to CSG
         print(f"Database query failed: {str(e)}")
         return await fetch_quotes_from_csg(
-            db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date_processed
+            db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date_processed, all_carriers=all_carriers
         )
     
 def get_naic_list(db: Session, state: str) -> List[str]:
@@ -494,7 +503,7 @@ async def get_quotes_from_csg(
     
     # Fetch quotes from CSG (pass age as a single-item list for compatibility)
     return await fetch_quotes_from_csg(
-        db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date
+        db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date, all_carriers=False
     )
 
 
@@ -508,7 +517,7 @@ class QuoteRequest(BaseModel):
     county: Optional[str] = None
     naic: Optional[List[str]] = None
     effective_date: Optional[str] = None
-
+    carriers: Optional[str] = Query("supported", regex="^(all|supported)$")
 @router.post("/quotes/", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
 async def post_quotes(
     request: QuoteRequest,
@@ -525,5 +534,6 @@ async def post_quotes(
         county=request.county,
         naic=request.naic,
         effective_date=request.effective_date,
+        carriers=request.carriers,
         db=db
     )
