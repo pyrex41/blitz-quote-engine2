@@ -58,6 +58,8 @@ def filter_quote_fields(quoteResponse):
             d['location'] = d['location_base']['zip5']
         else:
             d['location'] = d['location_base']['county']
+        if d['discount_category'] == '':
+            d['discount_category'] = None
         comp = d.pop('company_base')
         d.pop('location_base')
         d['naic'] = comp.get('naic')
