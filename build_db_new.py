@@ -588,7 +588,35 @@ class MedicareSupplementRateDB:
                 }
         return results
 
+    def get_discount_category(self, naic: str) -> str:
+        """Get discount category for a single NAIC."""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT discount_category 
+            FROM carrier_selection 
+            WHERE naic = ?
+        ''', (naic,))
+        result = cursor.fetchone()
+        return result[0] if result else None
 
+    def get_discount_categories(self, naics: List[str]) -> Dict[str, str]:
+        """Get discount categories for multiple NAICs.
+        
+        Args:
+            naics: List of NAIC strings
+            
+        Returns:
+            dict: Dictionary mapping NAICs to their discount categories
+        """
+        cursor = self.conn.cursor()
+        # Using placeholders for the IN clause
+        placeholders = ','.join('?' * len(naics))
+        cursor.execute(f'''
+            SELECT naic, discount_category 
+            FROM carrier_selection 
+            WHERE naic IN ({placeholders})
+        ''', naics)
+        return dict(cursor.fetchall())
 
 def process_quote(q0, label):
     logging.info(f"Processing quote: {label}")
