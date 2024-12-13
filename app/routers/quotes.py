@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from app.database import get_db
-from app.models import GroupMapping, CompanyName
+from app.models import GroupMapping, CompanyNames
 import json
 from zips import zipHolder
 import os
@@ -132,7 +132,7 @@ def process_filtered_quote(quote_data: Dict[str, Any], requested_ages: List[int]
     base_rate = quote_data.get('rate', 0)
     base_age = quote_data.get('age', 65)
     age_increases = quote_data.get('age_increases', [])
-    
+    discount_category = quote_data.get('discount_category', None)
     for age in (requested_ages or [base_age]):
         rate = calculate_rate_with_increases(base_rate, base_age, age, age_increases)
         if rate <= 0:
@@ -151,7 +151,8 @@ def process_filtered_quote(quote_data: Dict[str, Any], requested_ages: List[int]
             plan=quote_data['plan'],
             tobacco=quote_data['tobacco'],
             rate=rate,
-            discount_rate=discount_rate
+            discount_rate=discount_rate,
+            discount_category=discount_category
         ))
         
     return quotes_list
@@ -280,8 +281,8 @@ async def fetch_quotes_from_db(db: Session, state: str, zip_code: str, county: s
                              effective_date: Optional[str] = None) -> List[QuoteResponse]:
     """Fetch quotes from the database"""
     print(f"effective_date: {effective_date}")
-    query = db.query(GroupMapping, CompanyName.name).outerjoin(
-        CompanyName, GroupMapping.naic == CompanyName.naic
+    query = db.query(GroupMapping, CompanyNames.name).outerjoin(
+        CompanyNames, GroupMapping.naic == CompanyNames.naic
     ).filter(
         GroupMapping.state == state,
         or_(GroupMapping.location == zip_code, GroupMapping.location == county)
@@ -331,6 +332,14 @@ async def fetch_quotes_from_db(db: Session, state: str, zip_code: str, county: s
             'effective_date': effective_date or get_effective_date()
         }).scalar()
 
+        discount_category = db.execute(text("""
+            SELECT discount_category 
+            FROM carrier_selection 
+            WHERE naic = :naic
+        """), {'naic': mapping.naic}).scalar()
+
+
+
         if result:
             try:
                 # Parse the outer JSON array
@@ -344,6 +353,8 @@ async def fetch_quotes_from_db(db: Session, state: str, zip_code: str, county: s
                     quotes.append(Quote(**quote_data))
                     
                 if quotes:
+                    for quote in quotes:
+                        quote.discount_category = discount_category
                     results.append(QuoteResponse(
                         naic=mapping.naic,
                         group=mapping.naic_group,

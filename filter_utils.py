@@ -8,6 +8,7 @@ class Quote(BaseModel):
     tobacco: int
     rate: float
     discount_rate: float
+    discount_category: Optional[str] = None
 
 
 class QuoteInt(BaseModel):
@@ -17,7 +18,7 @@ class QuoteInt(BaseModel):
     tobacco: int
     rate: int
     discount_rate: int
-
+    discount_category: Optional[str] = None
 class QuoteResponse(BaseModel):
     naic: str
     group: int
@@ -32,7 +33,7 @@ class QuoteComparison(BaseModel):
 
 def filter_quote_fields(quoteResponse):
     desired_fields = {
-        'age', 'age_increases', 'company_base', 'discounts', 'fees', 'gender',
+        'age', 'age_increases', 'company_base', 'discounts', 'discount_category', 'fees', 'gender',
         'plan', 'rate', 'rate_increases', 'rating_class', 'tobacco', 'view_type',
         'location_base'
     }
@@ -93,12 +94,13 @@ def use_int(quote):
         plan=quote.plan,
         tobacco=quote.tobacco,
         rate=int(quote.rate*100),
-        discount_rate=int(quote.discount_rate*100)
+        discount_rate=int(quote.discount_rate*100),
+        discount_category=quote.discount_category
     )
 
 def filter_quote(quote):
     desired_fields = {
-        'age', 'age_increases', 'company_base', 'discounts', 'fees', 'gender',
+        'age', 'age_increases', 'company_base', 'discounts', 'discount_category', 'fees', 'gender',
         'plan', 'rate', 'rate_increases', 'rating_class', 'tobacco', 'view_type',
         'location_base'
     }
@@ -137,5 +139,6 @@ def use_int(quote):
         plan=quote.plan,
         tobacco=quote.tobacco,
         rate=int(quote.rate*100),
-        discount_rate=int(quote.discount_rate*100)
+        discount_rate=int(quote.discount_rate*100),
+        discount_category=quote.discount_category
     )

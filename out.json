@@ -19,8 +19,15 @@
   },
   "2025-04-01": {
     "effective_date": "2025-04-01",
-    "states_with_changes": [],
-    "changes": {},
+    "states_with_changes": [
+      "AL"
+    ],
+    "changes": {
+      "AL": {
+        "88595": true,
+        "60984": true
+      }
+    },
     "errors": {}
   },
   "2025-05-01": {
