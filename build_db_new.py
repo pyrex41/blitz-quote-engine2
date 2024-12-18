@@ -202,7 +202,7 @@ class MedicareSupplementRateDB:
         elif state == 'WI':
             plan_options = ['WIR_A50%']
         else:
-            plan_options = ['N', 'G']
+            plan_options = ['N', 'G', 'F']
         
 
         additional_keys = ["tobacco", "age", "gender", "plan"]

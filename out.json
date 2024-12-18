@@ -1,45 +1,28 @@
 {
   "2025-01-01": {
     "effective_date": "2025-01-01",
-    "states_with_changes": [],
-    "changes": {},
-    "errors": {}
-  },
-  "2025-02-01": {
-    "effective_date": "2025-02-01",
-    "states_with_changes": [],
-    "changes": {},
-    "errors": {}
-  },
-  "2025-03-01": {
-    "effective_date": "2025-03-01",
-    "states_with_changes": [],
-    "changes": {},
-    "errors": {}
-  },
-  "2025-04-01": {
-    "effective_date": "2025-04-01",
     "states_with_changes": [
-      "AL"
+      "CT",
+      "CT",
+      "CT",
+      "NY",
+      "NY",
+      "NY"
     ],
     "changes": {
-      "AL": {
-        "88595": true,
-        "60984": true
+      "CT": {
+        "61727": true,
+        "60052": true,
+        "79413": true,
+        "13100": true
+      },
+      "NY": {
+        "71412": true,
+        "12634": true
       }
     },
-    "errors": {}
-  },
-  "2025-05-01": {
-    "effective_date": "2025-05-01",
-    "states_with_changes": [],
-    "changes": {},
-    "errors": {}
-  },
-  "2025-06-01": {
-    "effective_date": "2025-06-01",
-    "states_with_changes": [],
-    "changes": {},
-    "errors": {}
+    "errors": {
+      "CT": "Client error '400 Bad Request' for url 'https://csgapi.appspot.com/v1/med_supp/quotes.json?zip5=06801&county=FAIRFIELD&age=65&gender=M&tobacco=0&effective_date=2025-01-01&plan=G&select=0&apply_discounts=0'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    }
   }
 }
