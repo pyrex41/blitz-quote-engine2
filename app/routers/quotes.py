@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from app.database import get_db
-from app.models import GroupMapping, CompanyNames
+from app.models import GroupMapping, CompanyNames, CarrierSelection
 import json
 from zips import zipHolder
 import os
@@ -473,8 +473,14 @@ async def get_quotes(
         )
     
 def get_naic_list(db: Session, state: str) -> List[str]:
-    res = db.query(GroupMapping.naic).distinct().filter(GroupMapping.state == state).all()
+    res = db.query(GroupMapping.naic).distinct()\
+        .join(CarrierSelection, GroupMapping.naic == CarrierSelection.naic)\
+        .filter(GroupMapping.state == state)\
+        .filter(CarrierSelection.selected == 1)\
+        .all()
     return [r[0] for r in res]
+
+
 @router.get("/quotes/csg", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
 async def get_quotes_from_csg(
     zip_code: str,
