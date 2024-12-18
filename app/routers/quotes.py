@@ -421,12 +421,12 @@ async def get_quotes(
                 if db_results:
                     print(f"Found {len(db_results)} quotes for plan {plan}")
                     results.extend(db_results)
-                    if naic:  # Only check missing NAICs if we have a NAIC filter
-                        for n in naic:
-                            if n not in [q.naic for q in results]:
-                                d = naics_to_fetch.get(plan, [])
-                                d.append(n)
-                                naics_to_fetch[plan] = d
+                    naicFilt = naic if naic else get_naic_list(db, state)
+                    for n in naicFilt:
+                        if n not in [q.naic for q in results]:
+                            d = naics_to_fetch.get(plan, [])
+                            d.append(n)
+                            naics_to_fetch[plan] = d
                 else:
                     print(f"No quotes found for plan {plan} in database")
                     plans_to_fetch.append(plan)
