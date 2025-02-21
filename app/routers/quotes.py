@@ -266,12 +266,15 @@ async def fetch_quotes_from_csg(db: Session, zip_code: str, county: str, state: 
                 
             quotes_list = process_filtered_quote(quote, age)
             if quotes_list:
-                results.append(QuoteResponse(
+                qr = QuoteResponse(
                     naic=quote.get('naic'),
                     group=-1,  # Default group for direct CSG queries
                     company_name=quote.get('name'),
                     quotes=list(map(use_int, quotes_list))
-                ))
+                )
+                if qr.naic == '60380':
+                    qr.company_name = 'AFLAC'
+                results.append(qr)
                 
         return results
         
@@ -364,12 +367,15 @@ async def fetch_quotes_from_db(db: Session, state: str, zip_code: str, county: s
                 if quotes:
                     for quote in quotes:
                         quote.discount_category = discount_category 
-                    results.append(QuoteResponse(
+                    qr = QuoteResponse(
                         naic=mapping.naic,
                         group=mapping.naic_group,
                         company_name=company_name or "Unknown",
                         quotes=list(map(use_int, quotes))
-                    ))
+                    )
+                    if qr.naic == '60380':
+                        qr.company_name = 'AFLAC'
+                    results.append(qr)
             except json.JSONDecodeError as e:
                 print(f"Error parsing JSON: {e}")
                 print(f"Raw result: {result}")
