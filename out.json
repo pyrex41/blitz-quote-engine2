@@ -1,28 +1,38 @@
 {
-  "2025-01-01": {
-    "effective_date": "2025-01-01",
+  "2025-02-01": {
+    "effective_date": "2025-02-01",
     "states_with_changes": [
-      "CT",
-      "CT",
-      "CT",
+      "LA",
       "NY",
       "NY",
-      "NY"
+      "NY",
+      "NH",
+      "NH",
+      "NH",
+      "MD",
+      "MD",
+      "MD",
+      "CT",
+      "CT",
+      "CT"
     ],
     "changes": {
-      "CT": {
-        "61727": true,
-        "60052": true,
-        "79413": true,
-        "13100": true
+      "LA": {
+        "73288": true,
+        "60984": true
       },
-      "NY": {
-        "71412": true,
-        "12634": true
-      }
+      "NH": {
+        "72850": true,
+        "60380": true
+      },
+      "MD": {
+        "61727": true,
+        "82538": true
+      },
+      "CT": {}
     },
     "errors": {
-      "CT": "Client error '400 Bad Request' for url 'https://csgapi.appspot.com/v1/med_supp/quotes.json?zip5=06801&county=FAIRFIELD&age=65&gender=M&tobacco=0&effective_date=2025-01-01&plan=G&select=0&apply_discounts=0'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      "CT": "Client error '400 Bad Request' for url 'https://csgapi.appspot.com/v1/med_supp/quotes.json?zip5=06335&county=NEW+LONDON&age=65&gender=M&tobacco=0&effective_date=2025-02-01&plan=G&select=0&apply_discounts=0'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
     }
   }
 }
