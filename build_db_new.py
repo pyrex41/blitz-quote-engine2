@@ -10,7 +10,6 @@ from functools import reduce
 import asyncio
 import csv
 import logging
-import libsql_experimental as libsql  # Replace sqlite3 import
 import itertools
 import random
 from copy import copy
