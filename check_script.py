@@ -8,7 +8,6 @@ from aiolimiter import AsyncLimiter
 from zips import zipHolder
 import json
 import os
-import libsql_experimental as libsql
 import traceback
 from collections import defaultdict
 from pprint import pprint
