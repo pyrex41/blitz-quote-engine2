@@ -1,5 +1,7 @@
 {pkgs}: {
   deps = [
+    pkgs.rustc
+    pkgs.cargo
     pkgs.taskflow
     pkgs.rapidfuzz-cpp
     pkgs.libxcrypt
