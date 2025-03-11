@@ -151,13 +151,16 @@ async def process_rate_changes(states_to_process, dates_to_process, num_zips=1, 
                 state = result['state']
                 change_dic = dic_to_extend.get('changes',{}).get(state,{})
                 any_changes = False
-                for naic, bool_ in result['changes'].items():
-                    flag = bool_ or change_dic.get(naic, False)
-                    change_dic[naic] = flag
-                    any_changes = any_changes or flag
-                if any_changes:
-                    dic_to_extend['states_with_changes'].add(state)
-                dic_to_extend['changes'][state] = change_dic
+                if result['changes'] is not None:
+                    for naic, bool_ in result['changes'].items():
+                        flag = bool_ or change_dic.get(naic, False)
+                        change_dic[naic] = flag
+                        any_changes = any_changes or flag
+                    if any_changes:
+                        dic_to_extend['states_with_changes'].add(state)
+                    dic_to_extend['changes'][state] = change_dic
+                else:
+                    logging.warning(f"No changes data for state: {state}, effective date: {effective_date}")
                 date_results[effective_date] = dic_to_extend
 
         for k, v in date_results.items():
@@ -190,6 +193,7 @@ async def main():
     parser.add_argument("state", nargs="?", help="Process a single state")
     parser.add_argument("-m", "--months", type=int, help="Number of months ahead to check")
     parser.add_argument("-g", "--group", type=int, help="Process group of states")
+    parser.add_argument("--naic", type=str, help="Process a specific carrier NAIC")
 
     state_list = [
         'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',

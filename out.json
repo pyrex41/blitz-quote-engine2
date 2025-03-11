@@ -1,38 +1,516 @@
 {
-  "2025-02-01": {
-    "effective_date": "2025-02-01",
+  "2025-04-01": {
+    "effective_date": "2025-04-01",
     "states_with_changes": [
+      "AL",
+      "SD",
+      "TN",
+      "AK",
+      "MO",
+      "CO",
+      "PA",
+      "IA",
+      "NY",
       "LA",
-      "NY",
-      "NY",
-      "NY",
-      "NH",
-      "NH",
-      "NH",
+      "NM",
+      "ID",
+      "OR",
+      "UT",
+      "AZ",
+      "VT",
+      "NE",
+      "OK",
+      "WV",
+      "DE",
+      "MT",
+      "NV",
+      "MI",
+      "TX",
+      "DC",
+      "KS",
+      "KY",
+      "NJ",
+      "OH",
       "MD",
-      "MD",
-      "MD",
-      "CT",
-      "CT",
-      "CT"
+      "FL",
+      "SC",
+      "NC",
+      "WY",
+      "GA",
+      "ND",
+      "IL",
+      "IN",
+      "MS",
+      "AR"
     ],
     "changes": {
-      "LA": {
-        "73288": true,
-        "60984": true
+      "AL": {
+        "20699": false,
+        "60984": true,
+        "82538": false,
+        "88595": false,
+        "79413": false,
+        "61727": false,
+        "60380": true,
+        "13100": false,
+        "68500": true
       },
-      "NH": {
-        "72850": true,
-        "60380": true
+      "AK": {
+        "79413": false,
+        "82538": false,
+        "78700": false,
+        "20699": false,
+        "73288": true,
+        "65722": false,
+        "71412": false
+      },
+      "AZ": {
+        "20699": false,
+        "61727": false,
+        "60534": false,
+        "79413": false,
+        "60380": true,
+        "60984": false,
+        "71412": true,
+        "78700": true,
+        "73288": true
+      },
+      "AR": {
+        "70580": false,
+        "20699": false,
+        "61727": false,
+        "60380": false,
+        "82538": false,
+        "60984": true,
+        "68500": true,
+        "79413": false,
+        "71412": true
+      },
+      "CA": {
+        "88366": false,
+        "20699": false,
+        "79413": false,
+        "60380": false,
+        "60052": false,
+        "72850": false,
+        "82538": false,
+        "73288": false,
+        "68500": false
+      },
+      "CO": {
+        "20699": false,
+        "65269": false,
+        "60052": false,
+        "60534": false,
+        "60380": false,
+        "79413": false,
+        "13100": true,
+        "72052": false
+      },
+      "DE": {
+        "20699": false,
+        "60380": false,
+        "79413": false,
+        "82538": false,
+        "67369": false,
+        "73288": false,
+        "88595": false,
+        "72052": true
+      },
+      "FL": {
+        "61727": false,
+        "79413": false,
+        "20699": false,
+        "82538": false,
+        "72850": false,
+        "60380": true,
+        "60984": true,
+        "73288": false,
+        "68500": false
+      },
+      "GA": {
+        "20699": false,
+        "61727": false,
+        "73288": false,
+        "82538": false,
+        "88595": false,
+        "60380": true,
+        "79413": false,
+        "71412": false,
+        "68500": true
+      },
+      "HI": {
+        "71412": false,
+        "79413": false,
+        "65722": false,
+        "73288": false
+      },
+      "ID": {
+        "20699": false,
+        "79413": false,
+        "60380": true,
+        "13100": false,
+        "82538": false,
+        "78700": true,
+        "70580": false,
+        "67369": true
+      },
+      "IL": {
+        "20699": false,
+        "60534": false,
+        "88595": false,
+        "13100": false,
+        "60380": true,
+        "79413": false,
+        "61727": false,
+        "60984": true,
+        "72052": true
+      },
+      "IN": {
+        "20699": false,
+        "82538": true,
+        "65269": false,
+        "71412": false,
+        "60380": true,
+        "60984": false,
+        "79413": false,
+        "78700": false,
+        "60052": false
+      },
+      "IA": {
+        "20699": false,
+        "82538": false,
+        "71412": false,
+        "60380": true,
+        "79413": false,
+        "60984": false,
+        "61727": false,
+        "72052": true,
+        "73288": false
+      },
+      "KS": {
+        "60534": false,
+        "20699": false,
+        "60380": true,
+        "60984": true,
+        "79413": false,
+        "65269": false,
+        "13100": false,
+        "72052": true,
+        "60052": true
+      },
+      "KY": {
+        "60380": false,
+        "20699": false,
+        "95158": false,
+        "79413": false,
+        "60984": true,
+        "82538": true,
+        "61727": false,
+        "78700": false,
+        "72850": false
+      },
+      "LA": {
+        "20699": false,
+        "65269": false,
+        "82538": false,
+        "79413": false,
+        "60380": true,
+        "60984": false,
+        "13100": false,
+        "73288": false,
+        "72052": true
+      },
+      "ME": {
+        "67369": false,
+        "79413": false,
+        "20699": false,
+        "73288": false
       },
       "MD": {
-        "61727": true,
-        "82538": true
+        "60052": true,
+        "20699": false,
+        "71412": false,
+        "79413": false,
+        "61727": false,
+        "60380": true,
+        "72052": false,
+        "82538": false
       },
-      "CT": {}
-    },
-    "errors": {
-      "CT": "Client error '400 Bad Request' for url 'https://csgapi.appspot.com/v1/med_supp/quotes.json?zip5=06335&county=NEW+LONDON&age=65&gender=M&tobacco=0&effective_date=2025-02-01&plan=G&select=0&apply_discounts=0'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      "MA": {},
+      "MI": {
+        "20699": false,
+        "60219": false,
+        "82538": false,
+        "60984": true,
+        "68500": false,
+        "61727": false,
+        "79413": false,
+        "60380": true
+      },
+      "MN": {},
+      "MS": {
+        "20699": false,
+        "60380": false,
+        "88595": false,
+        "82538": false,
+        "61727": false,
+        "60984": true,
+        "68500": true,
+        "72850": false,
+        "79413": false
+      },
+      "MO": {
+        "61727": false,
+        "79413": false,
+        "20699": false,
+        "78700": false,
+        "72850": false,
+        "60380": true,
+        "82538": false,
+        "73288": false
+      },
+      "MT": {
+        "82538": false,
+        "60380": false,
+        "20699": false,
+        "61727": false,
+        "68500": false,
+        "70580": false,
+        "79413": false,
+        "71412": false,
+        "88595": true
+      },
+      "NE": {
+        "82538": false,
+        "20699": false,
+        "60984": true,
+        "68500": false,
+        "79413": false,
+        "67369": false,
+        "73288": false
+      },
+      "NV": {
+        "20699": false,
+        "60380": true,
+        "79413": false,
+        "60052": false,
+        "65269": false,
+        "68500": true,
+        "13100": false,
+        "82538": false
+      },
+      "NH": {
+        "79413": false,
+        "72850": false,
+        "20699": false,
+        "67369": false,
+        "88595": false,
+        "60380": false,
+        "78700": false,
+        "73288": false
+      },
+      "NJ": {
+        "60380": false,
+        "61727": false,
+        "70580": false,
+        "20699": false,
+        "82538": true,
+        "60052": false,
+        "79413": false,
+        "72850": true,
+        "72052": false,
+        "73288": false
+      },
+      "NM": {
+        "20699": false,
+        "82538": false,
+        "60380": false,
+        "61727": false,
+        "79413": false,
+        "13100": false,
+        "60052": true,
+        "68500": true
+      },
+      "NY": {
+        "71412": true,
+        "12634": true
+      },
+      "NC": {
+        "20699": false,
+        "82538": true,
+        "72052": false,
+        "13100": false,
+        "61727": false,
+        "79413": false,
+        "60984": false,
+        "60052": true,
+        "60380": true
+      },
+      "ND": {
+        "20699": false,
+        "82538": false,
+        "67369": false,
+        "60380": false,
+        "60984": false,
+        "71412": false,
+        "73288": true
+      },
+      "OH": {
+        "61727": false,
+        "82538": false,
+        "20699": false,
+        "60380": true,
+        "79413": false,
+        "60984": true,
+        "68500": true,
+        "60052": false
+      },
+      "OK": {
+        "20699": false,
+        "82538": false,
+        "60984": false,
+        "61727": false,
+        "60380": true,
+        "79413": false,
+        "71412": false,
+        "60052": false,
+        "72052": true
+      },
+      "OR": {
+        "67369": false,
+        "79413": false,
+        "72850": false,
+        "60380": true,
+        "82538": false,
+        "73288": false,
+        "68500": true
+      },
+      "PA": {
+        "60534": false,
+        "20699": false,
+        "60219": false,
+        "60380": false,
+        "65269": true,
+        "60984": false,
+        "79413": false,
+        "72052": false
+      },
+      "RI": {
+        "79413": false,
+        "73288": false,
+        "67369": false,
+        "20699": false,
+        "60380": false,
+        "78700": false
+      },
+      "SC": {
+        "20699": false,
+        "60052": false,
+        "60534": true,
+        "71412": false,
+        "61727": false,
+        "60380": true,
+        "79413": false,
+        "72052": true,
+        "73288": false
+      },
+      "SD": {
+        "20699": false,
+        "61727": false,
+        "82538": true,
+        "60380": true,
+        "79413": false,
+        "71412": true,
+        "88595": false,
+        "73288": false
+      },
+      "TN": {
+        "20699": false,
+        "65269": false,
+        "82538": true,
+        "60052": false,
+        "60984": false,
+        "79413": false,
+        "60380": true,
+        "68500": true
+      },
+      "TX": {
+        "20699": false,
+        "60219": false,
+        "65269": false,
+        "60534": false,
+        "71412": false,
+        "60380": true,
+        "79413": false,
+        "88595": true,
+        "72052": true
+      },
+      "UT": {
+        "20699": false,
+        "82538": false,
+        "60380": false,
+        "61727": false,
+        "70580": false,
+        "79413": false,
+        "78700": true,
+        "13100": false
+      },
+      "VT": {
+        "67369": false,
+        "60380": true,
+        "20699": false,
+        "79413": false,
+        "73288": false,
+        "71412": false
+      },
+      "VA": {
+        "60380": false,
+        "82538": false,
+        "20699": false,
+        "69671": false,
+        "71412": false,
+        "68500": false,
+        "79413": false,
+        "67369": false
+      },
+      "WA": {
+        "20699": false,
+        "67369": false,
+        "72850": false,
+        "79413": false,
+        "70580": false
+      },
+      "WV": {
+        "20699": false,
+        "82538": false,
+        "60984": false,
+        "71412": false,
+        "67369": false,
+        "60380": true,
+        "79413": false,
+        "73288": true
+      },
+      "WI": {},
+      "WY": {
+        "20699": false,
+        "60534": false,
+        "67369": false,
+        "60380": true,
+        "88595": false,
+        "79413": false,
+        "71412": false,
+        "73288": false
+      },
+      "DC": {
+        "71412": false,
+        "79413": false,
+        "82538": false,
+        "20699": false,
+        "78700": false,
+        "65722": false,
+        "73288": true
+      }
     }
   }
 }

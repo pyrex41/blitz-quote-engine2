@@ -1,0 +1,21 @@
+{
+  "2025-04-01": {
+    "effective_date": "2025-04-01",
+    "states_with_changes": [
+      "LA"
+    ],
+    "changes": {
+      "LA": {
+        "82538": false,
+        "20699": false,
+        "65269": false,
+        "60984": true,
+        "79413": false,
+        "60380": false,
+        "13100": false,
+        "73288": true,
+        "72052": false
+      }
+    }
+  }
+}
