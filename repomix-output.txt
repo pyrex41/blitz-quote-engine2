@@ -1,0 +1,4031 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+
+================================================================
+File Summary
+================================================================
+
+Purpose:
+--------
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+
+File Format:
+------------
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Multiple file entries, each consisting of:
+  a. A separator line (================)
+  b. The file path (File: path/to/file)
+  c. Another separator line
+  d. The full contents of the file
+  e. A blank line
+
+Usage Guidelines:
+-----------------
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+
+Notes:
+------
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: **/*.py
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+
+Additional Info:
+----------------
+
+================================================================
+Directory Structure
+================================================================
+app/
+  routers/
+    quotes.py
+  database.py
+  main.py
+  models.py
+add_table.py
+async_csg.py
+build_db_new.py
+check_script.py
+config.py
+copy_data_forward.py
+date_utils.py
+db_operations_log.py
+filter_utils.py
+hello.py
+map_file.py
+map_sequential.py
+normalize_county.py
+tt.py
+write-test.py
+zips.py
+
+================================================================
+Files
+================================================================
+
+================
+File: app/routers/quotes.py
+================
+from fastapi import APIRouter, Depends, HTTPException, Query, Security
+from sqlalchemy import or_, text
+from sqlalchemy.orm import Session
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
+from app.database import get_db
+from app.models import GroupMapping, CompanyNames, CarrierSelection
+import json
+from zips import zipHolder
+import os
+from fastapi.security.api_key import APIKeyHeader
+from starlette.status import HTTP_403_FORBIDDEN
+import dotenv
+from async_csg import AsyncCSGRequest
+from config import Config
+import asyncio
+from filter_utils import filter_quote_fields
+from datetime import datetime, timedelta
+from filter_utils import Quote, QuoteInt, QuoteResponse, use_int, QuoteComparison
+import time
+from statistics import mean, median
+from normalize_county import normalize_county_name
+from thefuzz import process
+from pprint import pprint
+dotenv.load_dotenv()
+
+router = APIRouter()
+
+# Initialize CSG client for fallback
+csg_client = AsyncCSGRequest(Config.API_KEY)
+zip_helper = zipHolder("static/uszips.csv")
+
+
+
+VALID_STATE_CODES = {
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+    'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+    'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+    'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+    'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+    'DC'
+}
+
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+# Check if we're running on Replit
+IS_REPLIT = os.getenv('REPLIT', 'False').lower() == 'true'
+
+API_KEYS = set(['yVujgWOYsLOJxGaicK69TPYVKgwMmqgb'])
+
+def get_state_specific_plan(state: str, default_plan: Optional[str] = None) -> Optional[str]:
+    """Get state-specific plan override if applicable"""
+    if default_plan and default_plan.upper() in ['G', 'F']:
+        state_plan_mapping = {
+            'MN': 'MN_EXTB',
+            'WI': 'WI_HDED', 
+            'MA': 'MA_SUPP1'
+        }
+    else:
+        state_plan_mapping = {
+            'MN': 'MN_BASIC',
+            'WI': 'WI_BASE',
+            'MA': 'MA_CORE'
+        }
+    return state_plan_mapping.get(state, default_plan)
+
+def get_effective_date() -> str:
+    """Get the effective date for quotes (first of next month)"""
+    return (datetime.now() + timedelta(days=32)).replace(day=1).strftime('%Y-%m-%d')
+
+def validate_inputs(zip_code: str, state: str, county: Optional[str], gender: Optional[str]) -> tuple:
+    """Validate input parameters and return processed values"""
+    if not zip_code or not state:
+        raise HTTPException(status_code=400, detail="State and zip_code must be provided")
+
+    if len(state) != 2 or state.upper() not in VALID_STATE_CODES:
+        raise HTTPException(status_code=400, detail="Invalid state code")
+    
+    if not zip_code.isdigit() or len(zip_code) != 5:
+        raise HTTPException(status_code=400, detail="Invalid ZIP code format")
+
+    # Validate zip code and get county
+    valid_counties = zip_helper.lookup_county(zip_code)
+    if not valid_counties or valid_counties == ['None']:
+        raise HTTPException(status_code=400, detail="Invalid ZIP code")
+
+    # Process county with fuzzy matching
+    processed_county = None
+    if county:
+        # First try exact match with normalized name
+        normalized_county = normalize_county_name(county)
+        if normalized_county in valid_counties:
+            processed_county = normalized_county
+        else:
+            # Try fuzzy matching if exact match fails
+            best_match = process.extractOne(normalized_county, valid_counties)
+            if best_match and best_match[1] >= 80:  # Minimum similarity score of 80%
+                processed_county = best_match[0]
+            else:
+                processed_county = valid_counties[0]  # Fallback to first valid county
+    else:
+        processed_county = valid_counties[0]
+
+    # Process gender
+    processed_gender = None
+    if gender:
+        gender_upper = gender.upper()
+        if gender_upper not in ['M', 'F', 'MALE', 'FEMALE']:
+            raise HTTPException(status_code=400, detail="Gender must be 'M', 'F', 'male', or 'female'")
+        processed_gender = 'M' if gender_upper in ['M', 'MALE'] else 'F'
+
+    return zip_code, state.upper(), processed_county, processed_gender
+
+def calculate_rate_with_increases(base_rate: float, base_age: int, target_age: int, 
+                                age_increases: List[float]) -> float:
+    """Calculate rate for a specific age including age-based increases"""
+    age_diff = target_age - base_age
+    if age_diff < 0:
+        return 0.0
+        
+    rate_multiplier = 1.0
+    for i in range(age_diff):
+        if i < len(age_increases):
+            rate_multiplier *= (1 + age_increases[i])
+            
+    return base_rate * rate_multiplier
+
+def process_filtered_quote(quote_data: Dict[str, Any], requested_ages: List[int]) -> List[Quote]:
+    """Process a raw quote into a list of Quote objects"""
+    quotes_list = []
+    base_rate = quote_data.get('rate', 0)
+    base_age = quote_data.get('age', 65)
+    age_increases = quote_data.get('age_increases', [])
+    discount_category = quote_data.get('discount_category', None)
+    for age in (requested_ages or [base_age]):
+        rate = calculate_rate_with_increases(base_rate, base_age, age, age_increases)
+        if rate <= 0:
+            continue
+            
+        # Calculate discount if available
+        try:
+            discount_mult = (1 - quote_data['discounts'][0].get('value'))
+        except:
+            discount_mult = 1
+        discount_rate = round(rate * discount_mult, 2)
+        
+        quotes_list.append(Quote(
+            age=age,
+            gender=quote_data['gender'],
+            plan=quote_data['plan'],
+            tobacco=quote_data['tobacco'],
+            rate=rate,
+            discount_rate=discount_rate,
+            discount_category=discount_category
+        ))
+        
+    return quotes_list
+
+def get_api_key(api_key_header: str = Security(api_key_header)):
+    """Validate API key"""
+    if not api_key_header:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN, detail="API key is missing"
+        )
+    
+    if api_key_header not in API_KEYS:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN, detail="Could not validate API key"
+        )
+    
+    return api_key_header
+
+
+async def fetch_quotes_from_csg(db: Session, zip_code: str, county: str, state: str, 
+                              age: List[int], tobacco: Optional[bool] = None, 
+                              gender: Optional[str] = None, plans: List[str] = None,
+                              naic: Optional[List[str]] = None,
+                              effective_date: Optional[str] = None,
+                              all_carriers: bool = False) -> List[QuoteResponse]:
+    """Fetch quotes directly from CSG API"""
+    try:
+        # Validate required parameters
+        if not age:
+            age = range(65, 100)
+
+        if tobacco is None:
+            tobaccoOptions = [True, False]
+        else: 
+            tobaccoOptions = [tobacco]
+
+        if not gender:
+            genderOptions = ['M', 'F']
+        else:
+            genderOptions = [gender]
+
+        # Ensure token is initialized
+        if not hasattr(csg_client, 'token') or not csg_client.token:
+            await csg_client.async_init()
+            await csg_client.fetch_token()
+            
+        # Double check token after initialization
+        if not csg_client.token:
+            raise HTTPException(status_code=500, detail="Failed to initialize CSG client token")
+        
+        effective_date_processed = effective_date or get_effective_date()
+
+        # Validate effective date format and value
+        if effective_date_processed:
+            try:
+                # Parse the effective date string
+                effective_date_obj = datetime.strptime(effective_date_processed, '%Y-%m-%d').date()
+                
+                # Check if effective date is not before today
+                today = datetime.now().date()
+                if effective_date_obj < today:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Effective date cannot be before today"
+                    )
+                                    
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid effective date format. Must be YYYY-MM-DD"
+                )
+            
+        queries = []
+
+
+        base_naic_list = get_naic_list(db, state)
+        print(f"base_naic_list: {base_naic_list}")
+
+        for tobacco in tobaccoOptions:
+            for gender in genderOptions:
+                for a in age:
+                    for plan in plans:
+                        query_data = {
+                            'zip5': zip_code,
+                            'county': county,
+                            'age': a,
+                            'tobacco': int(tobacco),
+                            'gender': gender,
+                            'plan': get_state_specific_plan(state, plan),
+                            'effective_date': effective_date_processed,
+                        }
+                        if all_carriers:
+                            pass
+                        elif naic:
+                            query_data['naic'] = naic
+                        else:
+                            query_data['naic'] = base_naic_list
+                        queries.append(query_data)
+
+        raw_tasks = [csg_client.fetch_quote(**query) for query in queries]
+        raw_quotes = await asyncio.gather(*raw_tasks)
+        raw_quotes_flattened = [item for sublist in raw_quotes for item in sublist]
+        filtered_quotes = filter_quote_fields((raw_quotes_flattened, None))
+        results = []
+        
+        for quote in filtered_quotes:
+                
+            # Skip if NAIC doesn't match the filter
+            if naic and quote.get('naic') not in naic:
+                continue
+                
+            quotes_list = process_filtered_quote(quote, age)
+            if quotes_list:
+                qr = QuoteResponse(
+                    naic=quote.get('naic'),
+                    group=-1,  # Default group for direct CSG queries
+                    company_name=quote.get('name'),
+                    quotes=list(map(use_int, quotes_list))
+                )
+                if qr.naic == '60380':
+                    qr.company_name = 'AFLAC'
+                results.append(qr)
+                
+        return results
+        
+    except Exception as e:
+        error_msg = f"Error fetching quotes from CSG: {str(e)}"
+        if hasattr(e, '__traceback__'):
+            import traceback
+            tb = ''.join(traceback.format_tb(e.__traceback__))
+            error_msg = f"{error_msg}\nTraceback:\n{tb}"
+        raise HTTPException(status_code=500, detail=error_msg)
+
+async def fetch_quotes_from_db(db: Session, state: str, zip_code: str, county: str,
+                             age: Optional[List[int]], tobacco: Optional[bool],
+                             gender: Optional[str], plan: Optional[str],
+                             naic: Optional[List[str]] = None,
+                             effective_date: Optional[str] = None) -> List[QuoteResponse]:
+    """Fetch quotes from the database"""
+    print(f"effective_date: {effective_date}")
+    query = db.query(GroupMapping, CompanyNames.name).outerjoin(
+        CompanyNames, GroupMapping.naic == CompanyNames.naic
+    ).filter(
+        GroupMapping.state == state,
+        or_(GroupMapping.location == zip_code, GroupMapping.location == county)
+    )
+    
+    if naic:
+        query = query.filter(GroupMapping.naic.in_(naic))
+        
+    group_mappings = query.all()
+
+    if not group_mappings:
+        return []
+
+    results = []
+    for mapping, company_name in group_mappings:
+        store_key = f"{state}:{mapping.naic}:{mapping.naic_group}"
+        
+        # Build pattern for the inner JSON keys
+        inner_key_parts = [
+            f"{age[0]}" if age else "%",              # age
+            f"{gender}" if gender else "%",            # gender
+            f"{plan}" if plan else "%",               # plan
+            f"{str(tobacco)}" if tobacco is not None else "%"  # tobacco
+        ]
+        inner_key_pattern = ":".join(inner_key_parts)
+        print(f"Looking up store_key: {store_key}, inner pattern: {inner_key_pattern}")
+        
+        sql_query = text("""
+            WITH json_data AS (
+                SELECT value as json_blob
+                FROM rate_store 
+                WHERE key = :store_key
+                AND effective_date = :effective_date
+            ),
+            matched_objects AS (
+                SELECT value as obj
+                FROM json_data, json_each(json_blob)
+                WHERE key LIKE :inner_key_pattern
+            )
+            SELECT json_group_array(obj) as result
+            FROM matched_objects;
+        """)
+
+        result = db.execute(sql_query, {
+            'store_key': store_key,
+            'inner_key_pattern': inner_key_pattern,
+            'effective_date': effective_date or get_effective_date()
+        }).scalar()
+
+        discount_category = db.execute(text("""
+            SELECT discount_category 
+            FROM carrier_selection 
+            WHERE naic = :naic
+        """), {'naic': mapping.naic}).scalar()
+
+
+
+        if result:
+            try:
+                # Parse the outer JSON array
+                quotes_array = json.loads(result)
+                # Parse each quote object
+                quotes = []
+                for quote_data in quotes_array:
+                    if isinstance(quote_data, str):
+                        # If the quote is still a string, parse it again
+                        quote_data = json.loads(quote_data)
+                    quotes.append(Quote(**quote_data))
+                    
+                if quotes:
+                    for quote in quotes:
+                        quote.discount_category = discount_category 
+                    qr = QuoteResponse(
+                        naic=mapping.naic,
+                        group=mapping.naic_group,
+                        company_name=company_name or "Unknown",
+                        quotes=list(map(use_int, quotes))
+                    )
+                    if qr.naic == '60380':
+                        qr.company_name = 'AFLAC'
+                    results.append(qr)
+            except json.JSONDecodeError as e:
+                print(f"Error parsing JSON: {e}")
+                print(f"Raw result: {result}")
+            except Exception as e:
+                print(f"Error processing quotes: {e}")
+                print(f"Raw result: {result}")
+
+    return results
+
+
+@router.get("/quotes/", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
+async def get_quotes(
+    zip_code: str,
+    state: str,
+    age: int,
+    tobacco: bool,
+    gender: str,
+    plans: List[str] = Query(...),
+    county: Optional[str] = None,
+    naic: Optional[List[str]] = Query(None),
+    effective_date: Optional[str] = None,
+    carriers: Optional[str] = Query("supported", regex="^(all|supported)$"),
+    db: Session = Depends(get_db),
+):
+    """Get quotes from database with CSG fallback"""
+    # Validate and process inputs
+    zip_code, state, county, gender = validate_inputs(zip_code, state, county, gender)
+
+    all_carriers = carriers == "all"
+
+    default_effective_date = get_effective_date()
+    effective_date_processed = effective_date or default_effective_date
+    print(f"effective_date_processed: {effective_date_processed}")
+
+    try:
+        if all_carriers:    
+            return await fetch_quotes_from_csg(db, zip_code, county, state, [age], tobacco, gender, plans, [], effective_date_processed, all_carriers=True)
+        else:
+            # Try database first
+            results = []
+            print(f"Fetching quotes from database for {len(plans)} plans")
+            plans_to_fetch = []
+            naics_to_fetch = {}
+            for plan in plans:
+                print(f"Fetching quotes for plan {plan}")
+                db_results = await fetch_quotes_from_db(
+                    db, state, zip_code, county, [age], tobacco, gender, plan, naic, effective_date_processed
+                )
+                if db_results:
+                    print(f"Found {len(db_results)} quotes for plan {plan}")
+                    results.extend(db_results)
+                    naicFilt = naic if naic else get_naic_list(db, state)
+                    for n in naicFilt:
+                        if n not in [q.naic for q in results]:
+                            d = naics_to_fetch.get(plan, [])
+                            d.append(n)
+                            naics_to_fetch[plan] = d
+                else:
+                    print(f"No quotes found for plan {plan} in database")
+                    plans_to_fetch.append(plan)
+
+            # Fetch missing quotes from CSG
+            tasks = []
+            if plans_to_fetch:
+                print(f"Fetching quotes from CSG for {len(plans_to_fetch)} plans")
+                task = fetch_quotes_from_csg(
+                    db, zip_code, county, state, [age], tobacco, gender, plans_to_fetch, naic, effective_date_processed, all_carriers=all_carriers
+                )
+                tasks.append(task)
+            if naics_to_fetch:
+                print(f"Fetching quotes from CSG for {len(naics_to_fetch)} plans with missing NAICs")
+                for plan, naics in naics_to_fetch.items():
+                    print(f"Fetching quotes for plan {plan} with NAICs: {naics}")
+                    task = fetch_quotes_from_csg(
+                        db, zip_code, county, state, [age], tobacco, gender, [plan], naics, effective_date_processed, all_carriers=True
+                    )
+                    tasks.append(task)
+
+            # Gather all CSG results and flatten properly
+            if tasks:
+                print(f"Gathering {len(tasks)} CSG tasks")
+                csg_results = await asyncio.gather(*tasks)
+                print(f"Received {len(csg_results)} CSG result lists")
+                pprint(csg_results)
+                for result_list in csg_results:
+                    if result_list:  # Check if the result list is not empty
+                        print(f"Adding {len(result_list)} quotes from CSG result list")
+                        results.extend(result_list)
+                    else:
+                        print("Empty CSG result list, skipping")
+
+            sorted_results = sorted(results, key=lambda x: x.naic or '')
+            print(f"Sorted results: {sorted_results}")
+            return sorted_results
+
+    except Exception as e:
+        # Log the error and fall back to CSG
+        print(f"Database query failed: {str(e)}")
+        return await fetch_quotes_from_csg(
+            db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date_processed, all_carriers=all_carriers
+        )
+    
+def get_naic_list(db: Session, state: str) -> List[str]:
+    res = db.query(GroupMapping.naic).distinct()\
+        .join(CarrierSelection, GroupMapping.naic == CarrierSelection.naic)\
+        .filter(GroupMapping.state == state)\
+        .filter(CarrierSelection.selected == 1)\
+        .all()
+    return [r[0] for r in res]
+
+
+@router.get("/quotes/csg", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
+async def get_quotes_from_csg(
+    zip_code: str,
+    state: str,
+    age: int,
+    tobacco: bool,
+    gender: str,
+    plans: List[str] = Query(...),
+    county: Optional[str] = None,
+    naic: Optional[List[str]] = Query(None),
+    effective_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Get quotes directly from CSG API for testing"""
+    # Validate and process inputs
+    zip_code, state, county, gender = validate_inputs(zip_code, state, county, gender)
+    
+    # Ensure token is initialized
+    if not hasattr(csg_client, 'token') or not csg_client.token:
+        await csg_client.async_init()
+        await csg_client.fetch_token()
+        
+    # Double check token after initialization
+    if not csg_client.token:
+        raise HTTPException(status_code=500, detail="Failed to initialize CSG client token")
+    
+    # Fetch quotes from CSG (pass age as a single-item list for compatibility)
+    return await fetch_quotes_from_csg(
+        db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date, all_carriers=False
+    )
+
+
+class QuoteRequest(BaseModel):
+    zip_code: str
+    state: str
+    age: int
+    tobacco: bool
+    gender: str
+    plans: List[str]
+    county: Optional[str] = None
+    naic: Optional[List[str]] = None
+    effective_date: Optional[str] = None
+    carriers: Optional[str] = Query("supported", regex="^(all|supported)$")
+@router.post("/quotes/", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
+async def post_quotes(
+    request: QuoteRequest,
+    db: Session = Depends(get_db),
+):
+    """Get quotes from database with CSG fallback (POST version)"""
+    return await get_quotes(
+        zip_code=request.zip_code,
+        state=request.state,
+        age=request.age,
+        tobacco=request.tobacco,
+        gender=request.gender,
+        plans=request.plans,
+        county=request.county,
+        naic=request.naic,
+        effective_date=request.effective_date,
+        carriers=request.carriers,
+        db=db
+    )
+
+================
+File: app/database.py
+================
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
+import os
+#import libsql_experimental as libsql
+
+load_dotenv()
+
+TURSO_DB_URL = os.getenv("NEW_QUOTE_DB_URL")
+TURSO_DB_KEY = os.getenv("NEW_QUOTE_DB_KEY")
+
+dbUrl = f"sqlite+{TURSO_DB_URL}/?authToken={TURSO_DB_KEY}&secure=true"
+
+#conn = libsql.connect("msr_replica.db", sync_url=TURSO_DB_URL, auth_token=TURSO_DB_KEY)
+#conn.sync()
+
+
+SQLALCHEMY_DATABASE_URL = "sqlite:///./msr_target.db"
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+#engine = create_engine(dbUrl, connect_args={'check_same_thread': False}, echo=True)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+================
+File: app/main.py
+================
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
+from app.routers import quotes  # Import your router
+import os
+import dotenv
+
+dotenv.load_dotenv()
+
+app = FastAPI()
+
+sync_url = os.getenv("NEW_QUOTE_DB_URL")
+auth_token = os.getenv("NEW_QUOTE_DB_KEY")
+print(f"sync_url: {sync_url}")
+print(f"auth_token: {auth_token}")
+
+
+
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred"},
+    )
+
+app.include_router(quotes.router)
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Medicare Supplement Rate API"}
+
+================
+File: app/models.py
+================
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String, ForeignKey, JSON, VARCHAR, TEXT, INTEGER
+from sqlalchemy.orm import relationship
+from sqlalchemy.schema import Index
+
+Base = declarative_base()
+
+class GroupType(Base):
+    __tablename__ = 'group_type'
+
+    naic = Column(TEXT, primary_key=True)
+    state = Column(TEXT, primary_key=True)
+    group_zip = Column(INTEGER, primary_key=False)
+
+class RateStore(Base):
+    __tablename__ = 'rate_store'
+
+    key = Column(TEXT, primary_key=True, index=True)
+    effective_date = Column(TEXT, primary_key=False, index=True)
+    value = Column(JSON, primary_key=False)
+
+class CompanyNames(Base):
+    __tablename__ = 'company_names'
+
+    id = Column(INTEGER, primary_key=True)
+    naic = Column(VARCHAR, primary_key=False, index=True)
+    name = Column(VARCHAR, primary_key=False)
+
+class GroupMapping(Base):
+    __tablename__ = 'group_mapping'
+
+    naic = Column(TEXT, primary_key=True)
+    state = Column(TEXT, primary_key=True)
+    location = Column(TEXT, primary_key=True)
+    naic_group = Column(INTEGER, primary_key=False)
+
+    __table_args__ = (
+        Index('idx_naic_state_location', 'naic', 'state', 'location'),
+    )
+
+# ... existing models ...
+
+class CarrierSelection(Base):
+    __tablename__ = 'carrier_selection'
+
+    naic = Column(VARCHAR, primary_key=True)
+    company_name = Column(VARCHAR)
+    selected = Column(INTEGER)  # Using INTEGER for boolean (0/1)
+    discount_category = Column(VARCHAR)
+
+================
+File: add_table.py
+================
+from sqlalchemy import create_engine
+from sqlalchemy.sql import text
+
+# Connect to the SQLite database
+engine = create_engine('sqlite:///msr_target.db')
+
+# Execute the ALTER TABLE command
+with engine.connect() as conn:
+    conn.execute(text("ALTER TABLE carrier_selection ADD COLUMN discount_category VARCHAR"))
+    conn.commit()
+
+================
+File: async_csg.py
+================
+import httpx
+from httpx import ReadTimeout
+
+from toolz.functoolz import pipe
+from datetime import datetime, timedelta
+import configparser
+from copy import copy
+import asyncio
+from babel.numbers import format_currency
+
+from config import Config
+
+from aiocache import cached
+
+import time
+from pprint import pprint
+import csv
+import logging
+import random
+
+
+def process_st(state_counties):
+  out = set()
+  for x in state_counties:
+    xx = x.replace('ST ', 'ST. ').replace('SAINT ', 'ST. ').replace('SAINTE', 'STE.')
+    out.add(xx)
+  return out
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+from zips import zipHolder
+
+# try to get current token
+
+TIMEOUT = 60.0
+
+
+
+lookup_dic = {}
+
+
+def rate_limited(interval):
+
+  def decorator(function):
+    last_called = [0.0]
+
+    def wrapper(*args, **kwargs):
+      elapsed = time.time() - last_called[0]
+      if elapsed >= interval:
+        last_called[0] = time.time()
+        fetch_sheet_and_export_to_csv()
+      return function(*args, **kwargs)
+
+    return wrapper
+
+  return decorator
+
+
+#fetch_sheet_and_export_to_csv()
+
+
+def csv_to_dict(filename):
+  with open(filename, 'r') as file:
+    reader = csv.DictReader(file)
+    result = {}
+    for row in reader:
+      # Convert 'Category' and 'ID' to integers
+      row["Category"] = map_cat(row["Category"])  #int(row["Category"])
+      # Check for null string key and filter it out
+      if "" in row:
+        del row[""]
+      # Replace blank strings with None
+      for key, value in row.items():
+        if value == '':
+          row[key] = None
+      result[row["ID"]] = row
+  return result
+
+
+def map_cat(a_or_b: str):
+  if a_or_b.lower() == "a":
+    return 0
+  elif a_or_b.lower() == "b":
+    return 1
+  else:
+    return 2
+
+
+class AsyncCSGRequest:
+
+  def __init__(self, api_key):
+    self.uri = 'https://csgapi.appspot.com/v1/'
+    self.token_uri = "https://medicare-school-quote-tool.herokuapp.com/api/csg_token"
+    self.api_key = api_key
+    self.token = None  # Will be set asynchronously in an init method
+    self.request_count = 0
+
+  async def async_init(self):
+    try:
+      await self.set_token(await self.parse_token('token.txt'))
+    except Exception as e:
+      print(f"Could not parse token file: {e}")
+      await self.set_token()
+
+  async def parse_token(self, file_name):
+    # Assuming the token file contains a section [token-config] with a token entry
+    parser = configparser.ConfigParser()
+    with open(file_name, 'r') as file:
+      parser.read_file(file)
+    return parser.get('token-config', 'token')
+
+  async def set_token(self, token=None):
+    self.token = token if token else await self.fetch_token()
+    # Token is set, no need to write to a file unless it's a new token
+    if not token:
+      # Write the token to 'token.txt' asynchronously
+      with open('token.txt', 'w') as f:
+        f.write(f"[token-config]\ntoken={self.token}")
+
+  async def fetch_token(self):
+    async with httpx.AsyncClient() as client:
+      resp = await client.get(self.token_uri)
+    if resp.status_code == 200:
+      token = resp.json().get("csg_token")
+      logging.info(f"Fetched_token is {token}")
+      await self.set_token(token)
+      return token
+    else:
+      return await self.fetch_token_fallback()
+
+  async def fetch_token_fallback(self):
+    ep = 'auth.json'
+    values = {'api_key': self.api_key}
+    async with httpx.AsyncClient() as client:
+      resp = await client.post(self.uri + ep, json=values)
+      resp.raise_for_status(
+      )  # Will raise an exception for 4XX and 5XX status codes
+      token = resp.json()['token']
+      logging.warn(f"Reset token via csg: {token}")
+      return token
+
+  def GET_headers(self):
+    return {'Content-Type': 'application/json', 'x-api-token': self.token}
+
+  async def reset_token(self):
+    print('Resetting token asynchronously')
+    await self.set_token(token=None)
+
+  async def get(self, uri, params, full_response=False):
+    async with httpx.AsyncClient(timeout=10.0) as client:
+      resp = await client.get(uri, params=params, headers=self.GET_headers())
+      if resp.status_code == 403:
+        await self.reset_token()
+        resp = await client.get(uri, params=params, headers=self.GET_headers())
+      resp.raise_for_status(
+      )  # Will raise an exception for 4XX and 5XX status codes
+      self.request_count += 1
+      return resp.json() if not full_response else resp
+
+  async def get(self, uri, params, retry=3):
+    for _ in range(retry):  # Retry up to 3 times
+      try:
+        async with httpx.AsyncClient(
+            timeout=TIMEOUT) as client:  # Increase timeout
+          resp = await client.get(uri,
+                                  params=params,
+                                  headers=self.GET_headers())
+          if resp.status_code == 403:
+            await self.reset_token()
+            resp = await client.get(uri,
+                                    params=params,
+                                    headers=self.GET_headers())
+          resp.raise_for_status(
+          )  # Will raise an exception for 4XX and 5XX status codes
+          self.request_count += 1
+          return resp.json()
+      except ReadTimeout:
+        print("Request timed out. Retrying...")
+    raise Exception(f"Request failed after {retry} attempts")
+
+  async def _fetch_pdp(self, zip5):
+    ep = 'medicare_advantage/quotes.json'
+    payload = {
+        'zip5': zip5,
+        'plan': 'pdp',
+    }
+    resp = await self.get(self.uri + ep, params=payload)
+    return resp
+
+  async def fetch_pdp(self, zip5, *years):
+    resp = await self._fetch_pdp(zip5)
+    try:
+      return self.format_pdp(resp, *years)
+    except Exception as ee:
+      emsg = {
+          'Plan Name': "ERROR",
+          'Plan Type': str(ee),
+          'State': "CA",
+          'rate': format_currency(0, 'USD', locale='en_US'),
+          'year': list(years)[0]
+      }
+      return [emsg]
+
+  def format_pdp(self, pdp_results, *_years):
+    out = []
+    years = list(_years)
+    if len(years) == 0:
+      years.append(datetime.today().year)
+    for pdpr in pdp_results:
+      dt_format = "%Y-%m-%dT%H:%M:%SZ"
+      st_dt = pdpr['effective_date']
+      dt = datetime.strptime(st_dt, dt_format)
+      info = {
+          'Plan Name': pdpr['plan_name'],
+          'Plan Type': pdpr['plan_type'],
+          'State': pdpr['state'],
+          'rate': format_currency(pdpr['month_rate'] / 100,
+                                  'USD',
+                                  locale='en_US'),
+          'year': dt.year
+      }
+      out.append(info)
+    fout = filter(lambda x: x['year'] in years, out)
+    return list(fout)
+
+  async def fetch_quote(self, **kwargs):
+    acceptable_args = [
+        'zip5', 'county', 'age', 'gender', 'tobacco', 'plan', 'select',
+        'effective_date', 'apply_discounts', 'apply_fees', 'offset', 'naic'
+    ]
+    payload = {}
+
+    if 'retry' in kwargs:
+      retry = kwargs.pop('retry')
+    else:
+      retry = 3
+
+    for arg_name, val in kwargs.items():
+      lowarg = arg_name.lower()
+      if lowarg in acceptable_args:
+        payload[lowarg] = val
+    payload['apply_discounts'] = int(payload.get('apply_discounts', 0))
+
+    ep = 'med_supp/quotes.json'
+    resp = await self.get(self.uri + ep, params=payload, retry=retry)
+    return resp
+
+  async def fetch_advantage(self, **kwargs):
+    acceptable_args = [
+        'zip5', 'state', 'county', 'plan', 'offset', 'effective_date', 'sort',
+        'order'
+    ]
+    payload = {}
+
+    for arg_name, val in kwargs.items():
+      lowarg = arg_name.lower()
+      if lowarg in acceptable_args:
+        payload[lowarg] = val
+
+    if 'zip5' not in kwargs:
+      raise ValueError("The 'zip5' argument is required.")
+
+    ep = 'medicare_advantage/quotes.json'
+    resp = await self.get(self.uri + ep, params=payload)
+    return resp
+
+  @rate_limited(3600)
+  def format_rates(self, quotes, household):
+    dic = {}
+    for i, q in enumerate(quotes):
+      rate = int(q['rate']['month'])
+      naic = q['company_base']['naic']
+      company_name = q['company_base']['name']
+      plan = q['plan']
+
+      if q['select']:
+        k = company_name + ' // Select'
+      else:
+        k = company_name
+      qq = q['rating_class']
+      if qq:
+
+        kk = k + ' // ' + q['rating_class']
+      else:
+        kk = k
+
+      # workaround for those carriers in CSG that have multiple entries to handle discounts
+      # may need something better if there's other reasons for multipe naic codes -- would require a rewrite
+      arr = dic.get(naic, [])
+      cat = 2
+      disp = kk
+
+      name_dict = csv_to_dict('cat.csv')
+
+      ddic = name_dict.get(naic)
+      if ddic:
+        sub = False
+        i = 1
+        while i < 10:
+          s = str(i)
+          if ddic.get(s):
+            sval = ddic[s]
+            if sval.lower() in kk.lower():
+              naic = f"{naic}00{s}"
+              disp = f"{ddic.get('Name')} // {ddic.get(s, '').capitalize()}"
+              cat = 1
+              sub = True
+              break
+          i += 1
+        if not sub:
+          cat = ddic.get("Category", 2)
+          disp = ddic.get("Name", kk)
+
+      arr.append({
+          "fullname": kk,
+          "rate": rate,
+          "naic": naic,
+          "category": cat,
+          "display": disp
+      })
+      dic[naic] = arr
+
+    # continued workaround for carriers in CSG that don't handle household correctly
+    d = []
+    for a in dic.values():
+      if len(a) == 1:  # this is the way it should work but CSG is pretty lame
+        if bool(household):
+          d = d + a
+        else:
+          # handling an edge case for Allstate where it returns a single "Rooommate" but doesn't put household in the fields
+          a_filt = list(
+              filter(lambda x: has_household(x) == bool(household), a))
+          if len(a_filt) < len(a):
+            d = d + a_filt
+          else:
+            d = d + a
+      else:
+        # what about the case(s) where len(2) but they actually aren't putting household in the fields? Trying to handle that here
+        a_filt = list(filter(lambda x: has_household(x) == bool(household), a))
+        if len(a_filt) < len(a):
+          a_add = a_filt
+        else:
+          a_add = a
+
+        a_add = sorted(a_add, key=lambda x: "//" in x["fullname"])
+        if len(a_add) > 1:
+          for i in range(1, len(a_add)):
+            a_add[i]["category"] = 1  # category 1 for anything after the first
+
+        d = d + a_add
+
+    slist = sorted(d, key=lambda x: x["rate"])
+    out_list = []
+    for dic in slist:
+      out_list.append({
+          'company': dic["fullname"],
+          'rate': dic["rate"] /
+          100,  #format_currency(dic["rate"]/100, 'USD', locale='en_US'),
+          'naic': dic["naic"],
+          'plan': plan,
+          'category': dic["category"],
+          'display': dic["display"],
+          'type': f'Supplemental',
+      })
+    return out_list
+
+  def filter_quote(self,
+                   quote_resp,
+                   household=False,
+                   custom_naic=None,
+                   select=False):
+
+    try:
+      fresp = list(filter(lambda x: x['select'] == False,
+                          quote_resp)) if not select else quote_resp
+    except Exception as e:
+      logging.error(f"Error in filter_quote: {str(e)}")
+      raise
+
+    if custom_naic:
+      return pipe(
+          list(
+              filter(lambda x: int(x['company_base']['naic']) in custom_naic,
+                     fresp)), self.format_rates)
+    else:
+      return self.format_rates(fresp, household=household)
+
+  def format_results(self, results):
+    logging.info(results)
+    plan_dict = {}
+    for r in results:
+      for ol in r:
+        plan = ol['plan']
+        arr = plan_dict.get(plan, [])
+        arr.append({
+            'company': ol['company'],
+            'rate': ol['rate'],
+            'naic': ol['naic'],
+            'category': ol['category'],
+            'display': ol['display']
+        })
+        plan_dict[plan] = arr
+    return plan_dict
+
+  async def load_response_inner(self, query_data, delay=None):
+    if delay:
+      await asyncio.sleep(delay)
+      print("Sleeiping ", delay)
+    resp = await self.fetch_quote(**query_data, retry=4)
+    return resp
+
+  async def load_response_all_inner(self, query_data, delay=None):
+    results = {}
+    plans_ = query_data.pop('plan')
+    tasks = []
+    p_actual = []
+    for p in ['A', 'B', 'C', 'D', 'F', 'G', 'HDF', 'HDG', 'K', 'L', 'M', 'N']:
+      if p in plans_:
+        p_actual.append(p)
+    for i, p in enumerate(p_actual):
+      qu = copy(query_data)
+      qu['plan'] = p
+      tasks.append(self.load_response_inner(qu, delay))
+
+    for task in asyncio.as_completed(tasks):
+      result = await task
+      results.update(result)
+
+    return results  # self.format_results(results)
+
+  @cached(ttl=36_000)
+  async def load_response_all(self, query_data, delay=None):
+    return await self.load_response_all_inner(query_data, delay=delay)
+
+  @cached(ttl=36_000)
+  async def load_response(self, query_data, delay=None):
+    return await self.load_response_inner(query_data, delay=delay)
+
+  async def get_companies(self):
+    uri = self.uri + "medicare_advantage/open/companies.json"
+    resp = await self.get(uri, {})
+    return resp
+
+  async def calc_counties(self, state):
+    zips = zipHolder('static/uszips.csv')
+    state_zips = [k for (k, v) in zips.zip_states.items() if v == state]
+    state_zip_county = []
+
+    for z in state_zips:
+      counties = zips.lookup_county(z) 
+
+      try:
+        for c in counties:
+          if c != 'None':
+            state_zip_county.append((z, c))
+          else:
+            logging.warn(f"County for {z} is {c}")
+      except Exception as ee:
+        logging.warn(ee)
+
+    lookup_dict = {
+        '20699': {},  # Ace / Chubb
+        '72052': {},  # Aetna
+        '79413': {},  # UHC
+    }
+
+    for tup in state_zip_county:
+      z, county = tup
+      dt = (datetime.now() +
+            timedelta(days=32)).replace(day=1).strftime('%Y-%m-%d')
+      for k in lookup_dict.keys():
+        if z in lookup_dict[k].keys():
+          continue
+        else:
+          logging.info(f"submitting query for zip: {z} - naic: {k}")
+          r = await self.fetch_quote(zip5=int(z),
+                                     county=county,
+                                     age=65,
+                                     gender="M",
+                                     tobacco=0,
+                                     effective_date=dt,
+                                     naic=k,
+                                     plan="N")
+          zbase = r[0]['location_base']['zip5']
+          logging.info(f"{len(zbase)} zips for {k}")
+          zip_zero = next((z for z in zbase if z in state_zips), None)
+          for i in zbase:
+            lookup_dict[k][i] = zip_zero
+
+    stats = {'total_zips': len(state_zips)}
+    for k, v in lookup_dict.items():
+      stats[k] = len(v)
+      stats[f"{k}-unique"] = len(set(v))
+    out = {}
+    for kk, vdic in lookup_dict.items():
+      outmap = {v: i for i, v in enumerate(list(set(vdic.values())))}
+      d = {k: outmap[v] for k, v in vdic.items()}
+      out[kk] = d
+
+    return out, stats
+
+  async def calc_counties2(self, state):
+    zips = zipHolder('static/uszips.csv')
+    state_zips = [k for (k, v) in zips.zip_states.items() if v == state]
+    state_zip_county = []
+
+    for z in state_zips:
+      counties = zips.lookup_county(z)
+
+      try:
+        for c in counties:
+          if c != 'None':
+            state_zip_county.append((z, c))
+          else:
+            logging.warn(f"County for {z} is {c}")
+      except Exception as ee:
+        logging.warn(ee)
+        
+    #from lookup_index import lookup_dic
+    lookup_list = { k[0]: [] for k in lookup_dic.get(state, [])}
+    flat_list = { k[0]: [] for k in lookup_dic.get(state, [])}
+
+    for tup in state_zip_county:
+      z, county = tup
+      dt = (datetime.now() +
+            timedelta(days=32)).replace(day=1).strftime('%Y-%m-%d')
+      for k in lookup_list:
+        if z not in flat_list[k]:
+          try:
+            rr = await self.fetch_quote(zip5=int(z),
+                                        county=county,
+                                        age=65,
+                                        gender="M",
+                                        tobacco=0,
+                                        effective_date=dt,
+                                        naic=k,
+                                        plan="N")
+            #naic_filter = lambda x: x['company_base']['naic'] == k
+            #rr = list(filter(naic_filter, rrr))
+            if len(rr) > 0:
+              x = rr[0]
+              zbase = x['location_base']['zip5']
+              kk = x['company_base']['naic']
+              logging.info(f"{len(zbase)} zips for {kk}")
+              if kk not in flat_list:
+                flat_list[kk] = []
+                lookup_list[kk] = []
+              lookup_list[kk].append(zbase)
+              flat_list[kk] = list(set(flat_list[kk] + zbase))
+              logging.info(f"{len(flat_list[kk])} zips for {kk} -- {z}")
+            else:
+              logging.warn(f"No results for {z} - {county}")
+          except Exception as ee:
+            logging.warn(f"No results for {z} - {county} -- {ee}")
+    for k in lookup_list:
+      logging.info(f"{k} has {len(lookup_list[k])} zip regions")
+
+    return lookup_list
+    
+  async def calc_naic_map_zip(self, state, naic, first_result=None):
+    if state == 'WY' and naic == '82538': # workaround for weirdness
+      logging.warn(f"{naic} skipped by workaround")
+      return []
+    zips = zipHolder('static/uszips.csv')
+    state_zips = [k for (k, v) in zips.zip_states.items() if v == state]
+
+    lookup_list = []
+    processed_zips = set()
+
+    zero_count = 0
+    random.shuffle(state_zips)
+
+    params = {
+      "zip5": state_zips[0],
+      "age": 65,
+      "gender": "M",
+      "tobacco": 0,
+      "effective_date": (datetime.now() + timedelta(days=32)).replace(day=1).strftime('%Y-%m-%d'),
+      "naic": naic,
+    }
+    if state not in ['MN', 'WI', 'MA', 'NY']:
+      params["plan"] = "G"
+
+    first_result = await self.fetch_quote(**params) if first_result is None else first_result 
+    if len(first_result) == 0:
+      logging.warn(f"No results for {naic} in {state}. The plan may not be offered in this state.")
+      return []
+    else:
+      zbase = set(first_result[0]['location_base']['zip5'])
+      logging.info(f"{len(zbase)} zips for {naic}")
+      lookup_list.append(zbase)
+      processed_zips.update(zbase)
+
+    for z in state_zips:
+      if z not in processed_zips:
+        try:
+          params['zip5'] = z
+          rr = await self.fetch_quote(**params)
+          if len(rr) > 0:
+            x = rr[0]
+            zbase = set(x['location_base']['zip5'])
+            logging.info(f"{len(zbase)} zips for {naic}")
+            
+            # Check if zbase is already in lookup_list
+            existing_index = next((i for i, existing_zbase in enumerate(lookup_list) if existing_zbase == zbase), None)
+            if existing_index is not None:
+                # Replace existing zbase
+                zbase.add(z)
+                lookup_list[existing_index] = zbase
+            else:
+                # Append new zbase
+                zbase.add(z)
+                lookup_list.append(zbase)
+
+            processed_zips.update(zbase)
+
+            if len(zbase) == 0:
+              zero_count += 1
+              if zero_count > 30:
+                logging.warn(f"{naic} has {zero_count} zero regions -- exiting")
+                return []
+          else:
+            logging.warn(f"No results for {z}")
+        except Exception as ee:
+          logging.warn(f"No results for {z} -- {ee}")
+
+    logging.info(f"{naic} has {len(lookup_list)} zip regions")
+
+    return lookup_list
+  
+  async def calc_humana_workaround(self, state_counties, sc_dict, processed_counties, params, zips, list_of_groups):
+    group_extra = set()
+    p_state_counties = process_st(state_counties)
+
+    city_items = set()
+    for county in p_state_counties:
+      if county not in processed_counties:
+        try:
+          county_zip = next(z for z in sc_dict.get(county, []))
+          logging.info(f"county_zip: {county_zip}")
+          params['zip5'] = county_zip
+
+          if county_zip is None:
+            logging.warn(f"No 1:1 zip code found for county: {county}")
+            zip_to_use = zips.lookup_zip(county)
+            params['zip5'] = zip_to_use
+            params['county'] = county
+          elif 'county' in params:
+            params.pop('county')
+          
+          rr = await self.fetch_quote(**params)
+          
+          if len(rr) > 0:
+            x = rr[0]
+            county_base_raw = set(x['location_base']['county'])
+            county_base_raw = process_st(county_base_raw)
+
+            for x in list(county_base_raw):
+              if x.endswith(' CITY'): 
+                city_items.add(x[:-5])
+              else:
+                x_in = [x in group for group in list_of_groups]
+                if not any(x_in):
+                  group_extra.add(x)
+                processed_counties.add(x)
+          else:
+            logging.warn(f"No results for {county_zip} - {county}")
+        except Exception as ee:
+          logging.warn(f"Error processing {county}: {ee}")
+    return list_of_groups + [group_extra]
+  
+  
+  async def calc_naic_map_county(self, state, naic, first_result=None):
+    if state == 'WY' and naic == '82538':  # workaround for weirdness
+        logging.warn(f"{naic} skipped by workaround")
+        return []
+
+    zips = zipHolder('static/uszips.csv')
+    state_zips = [k for (k, v) in zips.zip_states.items() if v == state]
+    state_counties = set()
+
+    single_county_zips = set()
+    sc_dict = {}
+
+    for z in state_zips:
+        counties = zips.lookup_county2(z)
+        state_counties.update(counties)
+        if len(counties) == 1:
+            single_county_zips.add(z)
+            zz = sc_dict.get(counties[0], [])
+            zz.append(z)
+            sc_dict[counties[0]] = zz
+
+    
+
+
+    # Shuffle the single_county_zips list
+    single_county_zips = list(single_county_zips)
+    random.shuffle(single_county_zips)
+
+    state_counties.discard('None')
+    state_counties.discard(None)
+
+    # Log counties that aren't keys in sc_dict
+    counties_not_in_sc_dict = state_counties - set(sc_dict.keys())
+    for county in counties_not_in_sc_dict:
+        logging.warn(f"County not found in sc_dict: {county}; no 1:1 zip code found")
+
+    processed_counties = set()
+    processed_zips = set()
+
+    zero_count = 0
+
+    lookup_list = []
+
+    params = {
+      "zip5": single_county_zips[0],
+      "age": 65,
+      "gender": "M",
+      "tobacco": 0,
+      "effective_date": (datetime.now() + timedelta(days=32)).replace(day=1).strftime('%Y-%m-%d'),
+      "naic": naic,
+    }
+    if state not in ['MN', 'WI', 'MA', 'NY']:
+      params["plan"] = "G"
+
+    first_result = await self.fetch_quote(**params) if first_result is None else first_result 
+    
+    city_items = set()
+    if len(first_result) == 0:
+      logging.warn(f"No results for {naic} in {state}. The plan may not be offered in this state.")
+      return []
+    elif len(first_result[0]['location_base']['county']) == 0:
+      logging.warn(f"This state/naic does not support county mapping: {state}/{naic}")
+      return []
+    else:
+      county_base_raw = set(first_result[0]['location_base']['county'])
+      logging.info(f"{len(county_base_raw)} counties for {naic}")
+      
+      for x in list(county_base_raw):
+        if x.endswith(' CITY'): # VA workaround
+          city_items.add(x[:-5])
+        if state == 'FL':
+          if x == 'SAINT JOHNS': # FL workaround
+            city_items.add(x)
+            county_base_raw.add('ST. JOHNS')
+
+      county_base = county_base_raw - city_items
+      
+
+      
+      county_base = process_st(county_base_raw)
+
+      lookup_list.append(county_base)
+      processed_counties.update(county_base)
+      logging.info(f"{len(processed_counties)} counties processed for {naic}")
+
+
+    
+      # workaround for HUMANA LA
+      if state == 'LA' and naic in ['73288', '60984', '60052']:
+        group1 = set([
+          'JEFFERSON',
+          'ORLEANS',
+          'PLAQUEMINES',
+          'ST. BERNARD',
+          'ST. CHARLES',
+          'ST. TAMMANY',
+          'WASHINGTON',
+        ])
+        return await self.calc_humana_workaround(state_counties, sc_dict, processed_counties, params, zips, [group1])
+      
+      # workaround for HUMANA AL
+      if state in ['AL', 'MD', 'AK'] and naic in ['73288', '60984', '60052', '88595', '60219']:
+        return await self.calc_humana_workaround(state_counties, sc_dict, processed_counties, params, zips, [])
+      
+      if state == 'TX' and naic in ['73288', '60984', '60052', '88595', '60219']:
+        group1 = set([
+            'AUSTIN', 'BAILEY', 'BRAZORIA', 'CHAMBERS', 'COLORADO', 'FORT BEND', 'GALVESTON', 'HARDIN', 
+            'HARRIS', 'JEFFERSON', 'LIBERTY', 'MATAGORDA', 'MONTGOMERY', 'ORANGE', 'SAN JACINTO', 'WALKER', 
+            'WALLER', 'WASHINGTON', 'WHARTON'
+        ])
+        group2 = set([
+            'ANDREWS', 'ARANSAS', 'BEE', 'BORDEN', 'BROOKS', 'CALHOUN', 'CAMP', 'CLAY', 'COLLIN', 'COMAL', 
+            'COOKE', 'CRANE', 'DALLAS', 'DELTA', 'DENTON', 'DEWITT', 'DUVAL', 'ECTOR', 'ELLIS', 'FANNIN', 
+            'FRANKLIN', 'GLASSCOCK', 'GRAYSON', 'GUADALUPE', 'HOPKINS', 'HOWARD', 'HUNT', 'JACKSON', 
+            'JEFF DAVIS', 'JIM HOGG', 'JIM WELLS', 'KARNES', 'KAUFMAN', 'KENEDY', 'KLEBERG', 'LAMAR', 
+            'LAVACA', 'LOVING', 'MARTIN', 'MIDLAND', 'MONTAGUE', 'NAVARRO', 'NUECES', 'PECOS', 'RAINS', 
+            'RED RIVER', 'REEVES', 'REFUGIO', 'ROCKWALL', 'SAN PATRICIO', 'TITUS', 'UPTON', 'VAN ZANDT', 
+            'VICTORIA', 'WARD', 'WILSON', 'WINKLER', 'WOOD'
+        ])
+        return await self.calc_humana_workaround(state_counties, sc_dict, processed_counties, params, zips, [group1, group2])
+
+      if state == 'IL' and naic in ['73288', '60984', '60052', '88595', '60219']:
+        group1 = set([
+          'COOK', 'DEKALB', 'DUPAGE', 'GRUNDY', 'KANE', 'KENDALL', 'LASALLE', 'LAKE', 
+          'LIVINGSTON', 'MCHENRY', 'WILL'
+        ])
+        group2 = set([
+          'BOND', 'CALHOUN', 'CHAMPAIGN', 'CLINTON', 'FORD', 'GREENE', 'IROQUOIS', 
+          'JERSEY', 'KANKAKEE', 'MACOUPIN', 'MADISON', 'MONROE', 'MONTGOMERY', 
+          'PERRY', 'RANDOLPH', 'ST. CLAIR', 'WASHINGTON'
+        ])
+        return await self.calc_humana_workaround(state_counties, sc_dict, processed_counties, params, zips, [group1, group2])
+      
+      # workaround for HUMANA MO
+      if state == 'MO' and naic in ['73288', '60984', '60052', '88595', '60219']:
+        group1 = set([
+            'ADAIR', 'BATES', 'CLAY', 'COLE', 'JACKSON', 'JEFFERSON', 'LINCOLN',
+            'MARIES', 'OSAGE', 'PLATTE', 'RANDOLPH', 'RAY', 'ST. CHARLES',
+            'ST. LOUIS', 'SCHUYLER',
+        ])
+        group2 = set([
+            'ANDREW', 'AUDRAIN', 'BARTON', 'BOONE', 'BUCHANAN', 'CALDWELL',
+            'CAMDEN', 'CASS', 'CLARK', 'CLINTON', 'DAVIESS', 'GENTRY',
+            'HICKORY', 'JASPER', 'KNOX', 'LAFAYETTE', 'MACON', 'MARION',
+            'MILLER', 'MONITEAU', 'NEWTON', 'PHELPS', 'PIKE', 'PULASKI',
+            'PUTNAM', 'RALLS', 'ST. CLAIR', 'ST. FRANCOIS', 'STE. GENEVIEVE',
+            'SCOTLAND', 'SULLIVAN', 'TANEY', 'WARREN', 'WASHINGTON',
+        ])
+        return await self.calc_humana_workaround(state_counties, sc_dict, processed_counties, params, zips, [group1, group2])
+      # workaround for HUMANA FL
+      if state == 'FL' and naic in ['73288', '60984', '60052', '88595', '60219']:
+        group1 = set([
+          'BROWARD',
+          'MIAMI-DADE',
+          'PALM BEACH',
+        ])
+        group2 = set([
+          'BAKER',
+          'BAY',
+          'BREVARD',
+          'CHARLOTTE',
+          'CLAY',
+          'COLLIER',
+          'DUVAL',
+          'HERNANDO',
+          'HILLSBOROUGH',
+          'INDIAN RIVER',
+          'LAKE',
+          'LEE',
+          'MANATEE',
+          'MARTIN',
+          'NASSAU',
+          'OKALOOSA',
+          'ORANGE',
+          'OSCEOLA',
+          'PASCO',
+          'PINELLAS',
+          'ST. JOHNS',
+          'ST. LUCIE',
+          'SARASOTA',
+          'SEMINOLE',
+          'VOLUSIA'
+        ])
+        return await self.calc_humana_workaround(state_counties, sc_dict, processed_counties, params, zips, [group1, group2])
+      
+      if state == 'MI' and naic in ['73288', '60984', '60052', '88595', '60219']:
+        return []
+      if state == 'MI' and naic in ['60984']:
+        group1 = set([
+          'GRATIOT',
+          'MACOMB',
+          'OAKLAND',
+          'WAYNE',
+        ])
+        group2 = set([
+          'ALPENA',
+          'ARENAC',
+          'BAY',
+          'BRANCH',
+          'CALHOUN',
+          'CLARE',
+          'CRAWFORD',
+          'GENESEE',
+          'GLADWIN',
+          'INGHAM',
+          'ISABELLA',
+          'JACKSON',
+          'LAPEER',
+          'LIVINGSTON',
+          'LUCE',
+          'MANISTEE',
+          'MONROE',
+          'MONTCALM',
+          'MONTMORENCY',
+          'ROSCOMMON',
+          'SAGINAW',
+          'SANILAC',
+          'SHIAWASSEE',
+          'ST. CLAIR',
+          'TUSCOLA',
+          'WASHTENAW'
+        ])
+        return await self.calc_humana_workaround(state_counties, sc_dict, processed_counties, params, zips, [group1, group2])
+      
+      for county in state_counties:
+        if county not in processed_counties and county not in city_items:
+            logging.info(f"Processing county: {county}")
+            try:
+                # Find a zip code for this county
+                county_zip = next(z for z in sc_dict.get(county, []))
+                logging.info(f"county_zip: {county_zip}")
+                params['zip5'] = county_zip
+
+                if county_zip is None:
+                  logging.warn(f"No 1:1 zip code found for county: {county}")
+                  zip_to_use = zips.lookup_zip(county)
+                  params['zip5'] = zip_to_use
+                  params['county'] = county
+                elif 'county' in params:
+                  params.pop('county')
+                
+                rr = await self.fetch_quote(**params)
+                
+                if len(rr) > 0:
+                    x = rr[0]
+                    county_base_raw = set(x['location_base']['county'])
+                    if state == 'LA':
+                      county_base_raw = process_st(county_base_raw)
+
+                    cbr_i = list(county_base_raw)
+                    for x in cbr_i:
+                      if x.endswith(' CITY'):
+                          city_items.add(x[:-5])
+                      if state == 'FL':
+                        if x == 'SAINT JOHNS':
+                          city_items.add(x)
+                          county_base_raw.add('ST. JOHNS')
+                        if x == 'SAINT LUCIE':
+                          city_items.add(x)
+                          county_base_raw.add('ST. LUCIE')
+
+                          
+                    county_base = county_base_raw - city_items
+
+                    logging.info(f"{len(county_base)} counties for {naic}")
+                    
+                    # Check if county_base is already in lookup_list
+                    existing_index = next((i for i, s in enumerate(lookup_list) if s == county_base), None)
+                    if existing_index is not None:
+                        # Replace the existing set with the new one
+                        county_base.add(county)
+                        lookup_list[existing_index] = county_base
+                    else:
+                        # If not found, append the new set
+                        county_base.add(county)
+                        lookup_list.append(county_base)
+                    
+                    processed_counties.update(county_base)
+                    logging.info(f"{len(processed_counties)} counties processed for {naic} -- {county}")
+                    
+                    if len(county_base) == 0:
+                        zero_count += 1
+                        if zero_count > 5:
+                            logging.warn(f"{naic} has {zero_count} zero regions -- exiting")
+                            return []
+                else:
+                    logging.warn(f"No results for {county_zip} - {county}")
+            except Exception as ee:
+                logging.warn(f"Error processing {county}: {ee}")
+
+    logging.info(f"{naic} has {len(lookup_list)} county regions")
+
+    # Check for missing counties
+    missing_counties = set(state_counties) - processed_counties
+    if missing_counties:
+        logging.warn(f"Missing counties for NAIC {naic} in state {state}: {', '.join(sorted(missing_counties))}")
+    
+    # Check coverage percentage
+    coverage_percentage = (len(processed_counties) / len(state_counties)) * 100
+    logging.info(f"Coverage for NAIC {naic} in state {state}: {coverage_percentage:.2f}% ({len(processed_counties)}/{len(state_counties)} counties)")
+
+    if coverage_percentage < 95:
+        logging.warn(f"Low coverage ({coverage_percentage:.2f}%) for NAIC {naic} in state {state}")
+
+    return lookup_list
+  
+  async def calc_naic_map_combined2(self, state, naic, effective_date = None):
+     zips = zipHolder('static/uszips.csv')
+     state_zips = [k for (k, v) in zips.zip_states.items() if v == state]
+     random.shuffle(state_zips)
+
+     if effective_date is None:
+        effective_date = (datetime.now() + timedelta(days=32)).replace(day=1).strftime('%Y-%m-%d')
+
+     params = {
+      "zip5": state_zips[0],
+      "age": 65,
+      "gender": "M",
+      "tobacco": 0,
+      "effective_date": effective_date,
+      "naic": naic,
+     }
+
+     try:
+        first_result = await self.fetch_quote(**params)
+        if len(first_result) == 0:
+          logging.warn(f"No results for {naic} in {state}. The plan may not be offered in this state.")
+          out = ([], None)
+        elif len(first_result[0]['location_base']['zip5']) > 0:
+          res = await self.calc_naic_map_zip(state, naic, first_result)
+          out = (res, 'zip5') 
+        elif len(first_result[0]['location_base']['county']) > 0:
+          res = await self.calc_naic_map_county(state, naic, first_result)
+          out = (res, 'county')
+        else:
+          logging.warn(f"This state/naic does not support combined mapping: {state}/{naic}")
+          out = ([], None)
+     except Exception as ee:
+        logging.warn(f"EXA -- Error in initial query for {state}, {naic}: {ee}")
+        out = ([], None)
+     lookup_list0, mapping_type = out  
+     lookup_list = sorted(lookup_list0, key = len, reverse = True)
+     return lookup_list, mapping_type
+
+  async def calc_naic_map_combined(self, state, naic):
+    zips = zipHolder('static/uszips.csv')
+    state_zips = [k for (k, v) in zips.zip_states.items() if v == state]
+    state_counties = set()
+
+    for z in state_zips:
+        counties = zips.lookup_county(z)
+        state_counties.update(counties)
+
+    state_counties.discard('None')
+    state_counties = list(state_counties)
+
+    lookup_list = []
+    processed_items = set()
+    mapping_type = None
+
+    zero_count = 0
+    max_zero_count = 10
+    max_error_count = 10
+    error_count = 0
+    consecutive_empty_results = 0
+    max_consecutive_empty_results = 5
+
+    dt = (datetime.now() + timedelta(days=32)).replace(day=1).strftime('%Y-%m-%d')
+
+    # Shuffle zips and counties to avoid always starting with the same one
+    random.shuffle(state_zips)
+    random.shuffle(state_counties)
+
+
+    # Try to determine mapping type
+    for initial_item in state_zips + state_counties:
+        try:
+            if initial_item in state_zips:
+                initial_county = random.choice(zips.lookup_county(initial_item))
+                quote_args = {
+                    "zip5": initial_item,
+                    "county": initial_county,
+                    "age": 65,
+                    "gender": "M",
+                    "tobacco": 0,
+                    "effective_date": dt,
+                    "naic": naic
+                }
+                if state not in ['MN', 'WI', 'MA', 'NY']:
+                    quote_args["plan"] = "G"
+
+                pprint(quote_args)
+                rr = await self.fetch_quote(**quote_args)
+            else:  # It's a county
+                initial_zip = next(z for z in state_zips if initial_item in zips.lookup_county(z))
+                quote_args = {
+                    "zip5": initial_zip,
+                    "county": initial_item,
+                    "age": 65,
+                    "gender": "M",
+                    "tobacco": 0,
+                    "effective_date": dt,
+                    "naic": naic
+                }
+                if state not in ['MN', 'WI', 'MA', 'NY']:
+                    quote_args["plan"] = "G"
+                rr = await self.fetch_quote(**quote_args)
+            
+            if len(rr) > 0:
+                consecutive_empty_results = 0  # Reset counter on successful result
+                x = rr[0]
+                if 'zip5' in x['location_base'] and x['location_base']['zip5']:
+                    mapping_type = 'zip5'
+                    items_to_process = state_zips
+                elif 'county' in x['location_base'] and x['location_base']['county']:
+                    mapping_type = 'county'
+                    items_to_process = state_counties
+                else:
+                    continue  # Try next item if we can't determine mapping type
+
+                base_items = x['location_base'][mapping_type]
+                logging.info(f"{len(base_items)} {mapping_type}s for {naic}")
+                lookup_list.append(base_items)
+                processed_items.update(base_items)
+                break  # We've successfully determined the mapping type, exit the loop
+            else:
+                consecutive_empty_results += 1
+                if consecutive_empty_results >= max_consecutive_empty_results:
+                    logging.warn(f"No results found for {naic} in {state} after {consecutive_empty_results} attempts. Aborting.")
+                    return [], None
+            
+        except Exception as ee:
+            logging.warn(f"EX -- Error in initial query for {state}, {initial_item}: {ee}")
+            error_count += 1
+            if error_count > max_error_count:
+                logging.error(f"Max error count reached for {state}, {naic}. Aborting.")
+                return [], None
+
+    if not mapping_type:
+        logging.error(f"Unable to determine mapping type for {naic} in {state}")
+        return [], None
+
+  
+    city_items = []
+    for item in items_to_process:
+        if item not in processed_items and item not in city_items:
+            print(f"Processing item: {item}")
+            try:
+                if mapping_type == 'zip5':
+                    county = random.choice(zips.lookup_county(item))
+                    if state in ['MN', 'WI', 'MA', 'NY']:
+                        rr = await self.fetch_quote(zip5=item,
+                                                    county=county,
+                                                    age=65,
+                                                    gender="M",
+                                                    tobacco=0,
+                                                    effective_date=dt,
+                                                    naic=naic)
+                    else:
+                        rr = await self.fetch_quote(zip5=item,
+                                                    county=county,
+                                                    age=65,
+                                                    gender="M",
+                                                    tobacco=0,
+                                                    effective_date=dt,
+                                                    naic=naic,
+                                                    plan="G")
+                else:  # county
+                    #if naic == '25178' and categorize_county(item) == 'GENERAL_GROUP' and results['GENERAL_GROUP']:
+                        #continue
+                    
+                    county_zip = next(z for z in state_zips if item in zips.lookup_county(z))
+                    if state in ['MN', 'WI', 'MA', 'NY']:
+                        rr = await self.fetch_quote(zip5=county_zip,
+                                                    county=item,
+                                                    age=65,
+                                                    gender="M",
+                                                    tobacco=0,
+                                                    effective_date=dt,
+                                                    naic=naic)
+                    else:
+                        rr = await self.fetch_quote(zip5=county_zip,
+                                                    county=item,
+                                                    age=65,
+                                                    gender="M",
+                                                    tobacco=0,
+                                                    effective_date=dt,
+                                                    naic=naic,
+                                                    plan="G")
+
+                if len(rr) > 0:
+                    consecutive_empty_results = 0  # Reset counter on successful result
+                    x = rr[0]
+                    base_items = x['location_base'][mapping_type]
+
+                    if base_items:
+                        if mapping_type == 'county':
+                          print("base_items", base_items)
+                          for x in base_items:
+                              if x.endswith(' CITY'):
+                                  city_name = x[:-5]  # Remove ' CITY' from the end
+                                  city_items.append(city_name)
+                        lookup_list.append(base_items)
+                        processed_items.update(base_items)
+                        logging.info(f"{len(processed_items)} {mapping_type}s processed for {naic} -- {item}")
+                    else:
+                        zero_count += 1
+                        if zero_count > max_zero_count:
+                            logging.warn(f"{naic} has {zero_count} zero regions -- exiting")
+                            break
+                else:
+                    consecutive_empty_results += 1
+                    if consecutive_empty_results >= max_consecutive_empty_results:
+                        logging.warn(f"No results found for {naic} in {state} after {consecutive_empty_results} consecutive attempts. Aborting.")
+                        break
+                    logging.warn(f"No results for {item}")
+
+            except Exception as ee:
+                logging.warn(f"Error processing {item}: {ee}")
+                error_count += 1
+                if error_count > max_error_count:
+                    logging.error(f"Max error count reached for {state}, {naic}. Aborting.")
+                    break
+
+
+
+    if not lookup_list:
+        logging.warn(f"No data found for {naic} in {state}. The plan may not be offered in this state.")
+        return [], None
+    # Remove duplicate sublists from lookup_list
+    unique_lookup_list = []
+    seen = set()
+    for sublist in lookup_list:
+        # Convert the sublist to a tuple so it can be hashed
+        sublist_tuple = tuple(sorted(sublist))
+        if sublist_tuple not in seen:
+            seen.add(sublist_tuple)
+            unique_lookup_list.append(sublist)
+
+    lookup_list = unique_lookup_list
+    logging.info(f"{naic} has {len(lookup_list)} {mapping_type} regions")
+    return lookup_list, mapping_type
+
+def has_household2(xx):
+  x = xx["name"]
+  rating_class = xx["rating_class"]
+  if rating_class:
+    kk = x + ' // ' + rating_class
+  else:
+    kk = x
+  nm = kk.lower()
+  # Load name_dict from cat.csv
+  name_dict = csv_to_dict('cat.csv')
+
+  nm_list = set(
+      [x['Household'].lower() for x in name_dict.values() if x['Household']])
+  for x in nm_list:
+    if x in nm:
+      return True, kk
+  return False, kk
+
+
+def has_household(x):
+  kk = x["fullname"]
+  nm = kk.lower()
+  # Load name_dict from cat.csv
+  name_dict = csv_to_dict('cat.csv')
+
+  nm_list = set(
+      [x['Household'].lower() for x in name_dict.values() if x['Household']])
+  for x in nm_list:
+    if x in nm:
+      return True
+  return False
+
+
+# Example usage
+async def main():
+  csg = AsyncCSGRequest(Config.API_KEY)
+  await csg.async_init()
+  # Example of making a request
+  query_data = {
+      'zip5': '23060',
+      'gender': 'M',
+      'age': 65,
+      'county': 'HENRICO',
+      'tobacco': 0,
+      'effective_date': '2024-10-01',
+      'plan': 'N',
+      'naic': '25178'
+  }
+  response = await csg.load_response_all(query_data, delay=.2)
+  return response
+
+
+""" 
+# Run the async main function           
+r = lambda : asyncio.run(main())
+import time
+import statistics
+
+from tqdm import tqdm
+
+run_times = []
+for _ in tqdm(range(20)):
+    start_time = time.time()
+    r()
+    run_times.append(time.time() - start_time)
+
+print("--- Min: %s seconds ---" % min(run_times))
+print("--- Median: %s seconds ---" % statistics.median(run_times))
+print("--- Max: %s seconds ---" % max(run_times))   
+print("--- Mean: %s seconds ---" % statistics.mean(run_times))
+"""
+
+================
+File: build_db_new.py
+================
+# build_db_new.py
+import json
+from typing import List, Dict, Any
+from zips import zipHolder
+from async_csg import AsyncCSGRequest as csg
+from aiolimiter import AsyncLimiter
+from filter_utils import filter_quote
+from config import Config
+from functools import reduce
+import asyncio
+import csv
+import logging
+import libsql_experimental as libsql  # Replace sqlite3 import
+import itertools
+import random
+from copy import copy
+import operator
+from datetime import datetime, timedelta
+from db_operations_log import DBOperationsLogger
+from pprint import pprint
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename='medicare_supplement_rate_db.log',
+    filemode='a'
+)
+
+logger = logging.getLogger(__name__)
+
+class MedicareSupplementRateDB:
+    def __init__(self, db_path: str, log_operations: bool = True, log_file: str = None):
+        self.conn = libsql.connect(db_path)
+        self.cr = csg(Config.API_KEY)
+        if log_operations:
+            log_filename = log_file if log_file else f"db_operations_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            self.db_logger = DBOperationsLogger(log_filename)
+        else:
+            self.db_logger = None
+        self._create_tables()
+        self.zip_holder = zipHolder("static/uszips.csv")
+        self.limiter = AsyncLimiter(max_rate=20, time_period=1)
+        self.default_parameters = {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+        }
+
+    def _create_tables(self):
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS rate_store (
+                key TEXT,
+                effective_date TEXT,
+                value TEXT,
+                PRIMARY KEY (key, effective_date)
+            )
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_rate_store_date 
+            ON rate_store(effective_date)
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS group_mapping (
+                naic TEXT,
+                state TEXT,
+                location TEXT,
+                naic_group INTEGER,
+                PRIMARY KEY (naic, state, location)
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS group_type (
+                naic TEXT,
+                state TEXT,
+                group_zip INTEGER,
+                PRIMARY KEY (naic, state)
+            )
+        ''')
+        self.conn.commit()
+
+    def get_selected_carriers(self):
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('''
+                SELECT naic, company_name 
+                FROM carrier_selection 
+                WHERE selected = 1
+            ''')
+            return [{'naic': row[0], 'name': row[1]} for row in cursor.fetchall()]
+        except Exception as e:
+            logging.error(f"Error reading carrier_selection table: {str(e)}")
+            return []
+    
+    async def get_available_naics(self, state: str, effective_date: str):
+        params = copy(self.default_parameters)
+        params["effective_date"] = effective_date
+        zip_random = random.choice(self.zip_holder.lookup_zips_by_state(state))
+        params["zip5"] = zip_random
+        response = await self.cr.fetch_quote(**params)
+        out = set([q.get('company_base',{}).get("naic") for q in response])
+        out.discard(None)
+        return out
+    
+    def get_existing_naics(self, state: str):
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT naic 
+            FROM group_mapping 
+            WHERE state = ?
+        ''', (state,))
+        return set(row[0] for row in cursor.fetchall())
+    
+    def remove_naic(self, naic: str, state: str, include_rates: bool = False):
+        self._execute_and_log(
+            'DELETE FROM group_mapping WHERE naic = ? AND state = ?',
+            (naic, state)
+        )
+        if include_rates:
+            self._remove_rates(state, naic)
+
+    def _remove_rates(self, key: str):
+        self._execute_and_log(
+            'DELETE FROM rate_store WHERE key LIKE ?',
+            (key,)
+        )
+
+    async def set_state_map_naic(self, naic: str, state: str):
+        lookup_list, mapping_type = await self.cr.calc_naic_map_combined2(state, naic)
+        if len(lookup_list) == 0:
+            return False
+        
+        logging.info(f"lookup_list: {lookup_list}")
+        logging.info(f"mapping_type: {mapping_type}")
+        
+        # Prepare data for bulk insert
+        group_mapping_data = []
+        saved_groups = []
+        for i, group in enumerate(lookup_list, 1):
+            group_mapping_data.extend((naic, state, x, i) for x in group)
+            saved_groups.append(f"{state}:{naic}:{i}")
+
+        print(f"saved_groups: {saved_groups}")
+
+        # Bulk insert group mappings
+        cursor = self.conn.cursor()
+        if len(group_mapping_data) > 0:
+            cursor.executemany('''
+                INSERT OR REPLACE INTO group_mapping (naic, state, location, naic_group)
+                VALUES (?, ?, ?, ?)
+            ''', group_mapping_data)
+
+            # Insert group type
+            cursor.execute('''
+                INSERT OR REPLACE INTO group_type (naic, state, group_zip)
+                VALUES (?, ?, ?)
+            ''', (naic, state, int(mapping_type == "zip5")))
+
+        self.conn.commit()
+        return True
+
+    def get_rate_tasks(self, state: str, naic: str, effective_date: str):
+        # get group_type for a given state, naic
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT group_zip FROM group_type WHERE state = ? AND naic = ?
+        ''', (state, naic))
+        group_type = 'zip5' if bool(cursor.fetchone()[0]) else 'county'
+
+        # get all unique naic_group from group_mapping for a given state, naic
+        cursor.execute('''
+            SELECT DISTINCT naic_group FROM group_mapping WHERE state = ? AND naic = ?
+        ''', (state, naic))
+        naic_groups = [x[0] for x in cursor.fetchall()]
+
+        # get 10 locations from group_mapping for each naic,state, naic_group
+        all_tasks = []
+        for naic_group in naic_groups:
+            cursor.execute('''
+                SELECT location FROM group_mapping WHERE state = ? AND naic = ? AND naic_group = ? LIMIT 10
+            ''', (state, naic, naic_group))
+            label = f"{state}:{naic}:{naic_group}"
+            location_list = [x[0] for x in cursor.fetchall()]
+            tasks, _ = self.build_naic_requests(label, location_list, naic, group_type, effective_date)
+            all_tasks.extend(tasks)
+        return all_tasks
+
+    def build_naic_requests(self, label, location_list, naic: str, mapping_type: str, effective_date: str):
+        arg_holder = []
+        tasks = []
+        main_location = location_list[0]
+        tobacco_options = [0, 1]
+        age_options = [65, 70, 75, 80, 85, 90, 95]
+        gender_options = ["M", "F"]
+
+        state = label.split(":")[0]
+        if state == 'MA':
+            plan_options = ['MA_CORE', 'MA_SUPP1']
+        elif state == 'MN':
+            plan_options = ['MN_BASIC', 'MN_EXTB']
+        elif state == 'WI':
+            plan_options = ['WIR_A50%']
+        else:
+            plan_options = ['N', 'G', 'F']
+        
+
+        additional_keys = ["tobacco", "age", "gender", "plan"]
+        additional_values = [tobacco_options, age_options, gender_options, plan_options]
+        #naic = label.split(":")[1]
+
+        #print(main_location)   
+        args = {
+            "select": 0,
+            "naic": naic,
+            "label": label,
+            "effective_date": effective_date,
+        }
+        if mapping_type == 'zip5':
+            args['zip5'] = main_location
+            args['zip5_fallback'] = location_list[1:]
+        else:
+            try:
+                all_zips0 = list(map(lambda x: self.zip_holder.lookup_zip_by_county(state, x), location_list))
+                singe_county_zips = []
+                for zips in all_zips0:
+                    for z in zips:
+                        counties = self.zip_holder.lookup_county2(z)
+                        if len(counties) == 1:
+                            singe_county_zips.append(z)
+                random_zip = random.choice(singe_county_zips)
+                singe_county_zips.remove(random_zip) 
+                args['zip5'] = random_zip
+                args['zip5_fallback'] = singe_county_zips[:10]
+
+                # hardcoded because lots of overlap in counties / zips
+                if label == 'VA:67369:2':
+                    args['zip5'] = '22209'
+            except Exception as e:  
+                logging.error(f"Error processing {location_list}: {e}")
+                return [], []
+
+        if state in ['NY', 'MA']:
+            args.pop('naic')
+
+        combinations = [
+            dict(zip(additional_keys, values))
+            for values in itertools.product(*additional_values)
+        ]
+
+        self._remove_rates(label)
+
+        for (i, combination) in enumerate(combinations):
+            args = copy(args)
+            cargs = copy(args)
+            cargs.update(combination)
+            arg_holder.append(cargs)
+            tasks.append(self.fetch_and_process_and_save(cargs, retry=10))
+
+        return tasks, arg_holder    
+    
+    async def fetch_and_process(self, cargs, retry):
+        results, label = await self.fetch_helper(cargs, retry)
+        fr = [winnow_quotes(process_quote(q, label)) for q in results]
+        return fr, label
+    
+    async def fetch_and_process_and_save(self, cargs, retry):
+        fr, label = await self.fetch_and_process(cargs, retry)
+        for ls in fr:
+            dic = dic_build(ls)
+            #pprint(dic)
+            self._save_results(dic, cargs['effective_date'])
+        return fr, label
+
+    async def fetch_helper(self, args, retry=3, fallback_index=0, max_empty_attempts=5):
+        original_zip5 = args['zip5']
+        zip5_fallback = args.pop('zip5_fallback')
+        label = args.pop('label')
+        
+        empty_results_count = 0  # Track number of empty results
+
+        while fallback_index < len(zip5_fallback):
+            current_retry = retry
+            while current_retry > 0:
+                try:    
+                    async with self.limiter:
+                        results = await self.cr.load_response_inner(args)
+                        if results:  # If we got any results
+                            return results, label
+                        else:
+                            empty_results_count += 1
+                            logging.warning(f"No results for {args['zip5']}")
+                            if empty_results_count >= max_empty_attempts:
+                                logging.warning(f"Giving up after {max_empty_attempts} empty results for {label}")
+                                return [], label
+                            break  # Break inner loop to try next ZIP code
+                except Exception as e:
+                    logging.error(f"An error occurred for request: {args}")
+                    logging.error(f"Error details: {e}")
+                    if current_retry > 1:
+                        logging.info(f"Retrying request: {args} (Retry attempt: {11 - current_retry})")
+                        await asyncio.sleep(0.2)
+                        current_retry -= 1
+                    else:
+                        break
+            
+            fallback_index += 1
+            if fallback_index < len(zip5_fallback):
+                args['zip5'] = zip5_fallback[fallback_index]
+            
+        # If all fallbacks have been exhausted, restore original values and log a warning
+        args['zip5'] = original_zip5
+        logging.warning(f"All retry attempts and fallback locations exhausted for args: {args}")
+        return [], label
+    
+    def _save_results(self, dic, effective_date):
+        for k, v in dic.items():
+            self._set_rate(k, v, effective_date)
+
+    def _set_rate(self, key: str, value: Dict[str, Any], effective_date: str):
+        # Use INSERT OR REPLACE with json_set to append to array
+        self._execute_and_log(
+            '''INSERT INTO rate_store (key, effective_date, value) 
+               VALUES (?, ?, json(?))
+               ON CONFLICT(key, effective_date) 
+               DO UPDATE SET value = json_patch(
+                   CASE 
+                       WHEN value IS NULL THEN '{}' 
+                       ELSE value 
+                   END,
+                   json(?)
+               )''',
+            (key, effective_date, json.dumps(value), json.dumps(value))
+        )
+    
+    def _get_group_id(self, naic: str, state: str, location: str) -> int:
+        cursor = self.conn.cursor()
+        result = cursor.execute('''
+            SELECT naic_group FROM group_mapping
+            WHERE naic = ? AND state = ? AND location = ?
+        ''', (naic, state, location)).fetchone()
+        return result[0] if result else None
+
+    def _get_rate(self, key: str, effective_date: str) -> Any:
+        logging.info(f"Getting key: {key} for effective date: {effective_date}")
+        cursor = self.conn.cursor()
+        result = cursor.execute(
+            'SELECT value FROM rate_store WHERE key = ? AND effective_date = ?', 
+            (key, effective_date)
+        ).fetchone()
+        
+        if result:
+            # Parse the JSON string directly from the value column
+            return json.loads(result[0])
+        return None
+
+    def _execute_and_log(self, query: str, params: Any = None, many: bool = False):
+        cursor = self.conn.cursor()
+        if many:
+            cursor.executemany(query, params)
+        else:
+            cursor.execute(query, params)
+        
+        if self.db_logger:
+            self.db_logger.log_operation(
+                'executemany' if many else 'execute',
+                query,
+                params
+            )
+        self.conn.commit()
+
+    async def fetch_current_rates(self, state, zip_code, county, effective_date, naic_list = None):
+        csg = self.cr
+        query_data = {
+            'zip5': zip_code,
+            'county': county,
+            'age': 65,
+            'gender': 'M',
+            'tobacco': 0,
+            'effective_date': effective_date,
+            'plan': 'G',  # Assuming Plan G, modify as needed
+            'select': 0
+        }
+        if state == 'MN':
+            query_data['plan'] = 'MN_BASIC'
+        elif state == 'WI':
+            query_data['plan'] = 'WI_BASE'
+        elif state == 'MA':
+            query_data['plan'] = 'MA_CORE'
+
+        if naic_list is not None:
+            query_data['naic'] = naic_list
+    
+        return await csg.fetch_quote(**query_data)
+    
+    async def get_naic_data(self, state, zip5, county, available_naics):
+        existing_naics = self.get_existing_naics(state)
+        selected_naics = [x["naic"] for x in self.get_selected_carriers()]
+        naic_list = available_naics.intersection(selected_naics)
+
+        nais_to_remove = existing_naics - available_naics
+        for naic in nais_to_remove:
+            pass #self.remove_naic(naic, state, include_rates=True)
+
+        missing_naics = set()
+
+        labels = {}
+        for naic in naic_list:
+            group_id = self._get_group_id(naic, state, zip5)
+            if group_id is None:
+                group_id = self._get_group_id(naic, state, county)
+            if group_id is not None:
+                labels[naic] = f"{state}:{naic}:{group_id}"
+            else:
+                logging.warning(f"No group id found for naic: {naic} in state: {state} and zip: {zip5}")
+                missing_naics.add(naic)
+        inv_labels = {v: k for k, v in labels.items()}
+        naic_short_list = list(set(naic_list) - missing_naics)
+        return labels, inv_labels, naic_list, missing_naics
+
+    async def check_rate_changes(self, state, zip5=None, effective_date: str = None, available_naics: set = None):
+        logging.info(f"Checking rate changes for state: {state}")
+        
+        # Get a random zip code for the state
+        state_zips = [k for k, v in self.zip_holder.zip_states.items() if v == state]
+        if not state_zips:
+            logging.warning(f"No zip codes found for state: {state}")
+            return
+        
+        random_zip = zip5 if zip5 else random.choice(state_zips)
+        logging.info(f"Using zip: {random_zip}")
+        matching_county = self.zip_holder.lookup_county(random_zip)[0]
+        logging.info(f"matching_county: {matching_county}")
+        
+        # Get the carriers for this state
+        if available_naics is None:
+            available_naics = await self.get_available_naics(state, effective_date)
+
+        labels, inv_labels, naic_list, missing_naics = await self.get_naic_data(state, random_zip, matching_county, available_naics)
+        naic_short_list = list(set(naic_list) - missing_naics)
+
+        current_rates = await self.fetch_current_rates(state, random_zip, matching_county, effective_date)
+        current_rates = [q for q in current_rates if q.get('company_base', {}).get('naic') in naic_short_list]
+        logging.info(f"number of rates: {len(current_rates)}")
+        logging.info(f"zip / county: {random_zip} / {matching_county}")
+
+        processed_quotes = [quote for q in current_rates for quote in process_quote(q, labels[q['company_base']['naic']])]
+
+    
+        if state == 'MN':
+            compare_plan = 'MN_BASIC'
+        elif state == 'WI':
+            compare_plan = 'WI_BASE'
+        elif state == 'MA':
+            compare_plan = 'MA_CORE'
+        else:
+            compare_plan = 'G'
+
+        rdic = {}
+        for q in processed_quotes:
+            dic = rdic.get(q['label'], {})
+            if q['label']:
+                q_key = f"{q['age']}:{q['gender']}:{q['plan']}:{q['tobacco']}"
+                dic[q_key] = q
+                rdic[q['label']] = dic
+
+        copy_empty_rate_tasks = []
+        for naic in naic_short_list:
+            copy_empty_rate_tasks.append(self.copy_latest_rates(state, naic, effective_date))
+        await asyncio.gather(*copy_empty_rate_tasks)
+
+        stored_rates = {k: self._get_rate(k, effective_date) for k in rdic.keys()}
+        sr = {}
+        for k, dic in stored_rates.items():
+            if dic is None:  # Handle case where no stored rates exist
+                sr[k] = None
+                continue
+                
+            test_case = dic.get("65:M:G:False")
+            sr[k] = test_case
+
+
+        s_dic = {}
+        for k, v in rdic.items():
+            stored_rate = rdic.get(k, {}).get(f"65:M:G:False")
+            fetched_rate = sr.get(k)
+            if stored_rate is None or fetched_rate is None:
+                s_dic[inv_labels[k]] = True
+            else:
+                s_dic[inv_labels[k]] = fetched_rate['rate'] != stored_rate['rate']
+
+        for naic in list(missing_naics):
+            s_dic[naic] = True
+ 
+        return rdic, sr, s_dic
+    
+
+    async def get_rates_for_date(self, state: str, naic: str, effective_date: str) -> Dict:
+        """Get all rates for a given state/naic combination on a specific date"""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT key, value 
+            FROM rate_store 
+            WHERE key LIKE ? AND effective_date = ?
+        ''', (f"{state}:{naic}:%", effective_date))
+        
+        results = {}
+        for key, value in cursor.fetchall():
+            if value:  # Check if value exists and is not None
+                results[key] = json.loads(value)
+        return results
+
+    async def copy_rates(self, state: str, naic: str, source_date: str, target_date: str) -> bool:
+        """Copy rates from source_date to target_date for a given state/naic combination"""
+        # Get rates from source date
+        source_rates = await self.get_rates_for_date(state, naic, source_date)
+        if not source_rates:
+            logging.warning(f"No rates found to copy from {source_date} for {state} {naic}")
+            return False
+
+        # Copy rates to target date
+        cursor = self.conn.cursor()
+        for key, value in source_rates.items():
+            self._execute_and_log(
+                '''INSERT OR REPLACE INTO rate_store (key, effective_date, value)
+                   VALUES (?, ?, ?)''',
+                (key, target_date, json.dumps(value))
+            )
+        
+        logging.info(f"Copied {len(source_rates)} rates from {source_date} to {target_date} for {state} {naic}")
+        return True
+    
+    async def copy_latest_rates(self, state: str, naic: str, target_date: str, force: bool = False):
+        # Check if target date data exists and is valid JSON
+        if not force:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT COUNT(*) 
+                FROM rate_store 
+                WHERE key LIKE ? 
+                AND effective_date = ?
+                AND json_valid(value)
+            ''', (f"{state}:{naic}:%", target_date))
+            
+            if cursor.fetchone()[0] > 0:
+                logging.info(f"Rates already exist for {state} {naic} on {target_date}")
+                return True
+
+        latest_rates = await self.get_most_recent_rates(state, naic)
+        for key, value in latest_rates.items():
+            self._execute_and_log(
+                '''INSERT OR REPLACE INTO rate_store (key, effective_date, value)
+                   VALUES (?, ?, ?)''',
+                (key, target_date, json.dumps(value['rate_data']))
+            )
+            logging.info(f"Copied {key} rates from {value['effective_date']} to {target_date}")
+        return True
+            
+    
+    async def get_most_recent_rates(self, state: str, naic: str) -> Dict:
+        """Get the most recent rates for each group_id for a given state/naic combination"""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            WITH RankedRates AS (
+                SELECT 
+                    key,
+                    value,
+                    effective_date,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY replace(replace(key, ?, ''), ':', '') 
+                        ORDER BY effective_date DESC
+                    ) as rn
+                FROM rate_store
+                WHERE key LIKE ?
+                AND json_valid(value)
+            )
+            SELECT key, value, effective_date
+            FROM RankedRates 
+            WHERE rn = 1
+        ''', (f"{state}:{naic}:", f"{state}:{naic}:%"))
+        
+        results = {}
+        for key, value, effective_date in cursor.fetchall():
+            if value:  # Check if value exists and is not None
+                results[key] = {
+                    'rate_data': json.loads(value),
+                    'effective_date': effective_date
+                }
+        return results
+
+    def get_discount_category(self, naic: str) -> str:
+        """Get discount category for a single NAIC."""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT discount_category 
+            FROM carrier_selection 
+            WHERE naic = ?
+        ''', (naic,))
+        result = cursor.fetchone()
+        return result[0] if result else None
+
+    def get_discount_categories(self, naics: List[str]) -> Dict[str, str]:
+        """Get discount categories for multiple NAICs.
+        
+        Args:
+            naics: List of NAIC strings
+            
+        Returns:
+            dict: Dictionary mapping NAICs to their discount categories
+        """
+        cursor = self.conn.cursor()
+        # Using placeholders for the IN clause
+        placeholders = ','.join('?' * len(naics))
+        cursor.execute(f'''
+            SELECT naic, discount_category 
+            FROM carrier_selection 
+            WHERE naic IN ({placeholders})
+        ''', naics)
+        return dict(cursor.fetchall())
+
+def process_quote(q0, label):
+    logging.info(f"Processing quote: {label}")
+    quote = filter_quote(q0)
+    if quote is None:
+        return []
+    gender = quote['gender']
+    tobacco = quote['tobacco']
+    age = quote['age']
+    plan = quote['plan']
+    rate = quote['rate']
+    rate_mults = [1.0] + [x + 1 for x in quote['age_increases']]
+    try:
+        discount_mult = (1 - quote['discounts'][0].get('value'))
+    except:
+        discount_mult = 1
+    ages = [age + i for i in range(len(rate_mults))]
+    arr = []
+    for i, age in enumerate(ages):  
+        rate_value = round(rate * reduce(lambda x, y: x * y, rate_mults[:i + 1]), 2)
+        discount_value = round(discount_mult * rate_value, 2)
+        arr.append({
+            'age': age,
+            'gender': gender,
+            'plan': plan,
+            'tobacco': tobacco,
+            'rate': rate_value,
+            'discount_rate': discount_value,
+            'label': label
+        })
+    return arr
+
+def winnow_quotes(quotes):
+    unique_quotes = {}
+    for quote in quotes:
+        key = (quote['age'], quote['gender'], quote['plan'], quote['tobacco'])
+        if key in unique_quotes:
+            if quote['rate'] > unique_quotes[key]['rate']:
+                unique_quotes[key] = quote
+        else:
+            unique_quotes[key] = quote
+    return list(unique_quotes.values())
+
+def dic_build(flat_list):
+    dic = {}
+    for q in flat_list:
+        label = q['label']
+        arr = dic.get(label, [])
+        arr.append(q)
+        dic[label] = arr
+
+    dic_out = {}
+    for label, arr in dic.items():
+        d = {}
+        for q in arr:
+            q_key = f"{q['age']}:{q['gender']}:{q['plan']}:{q['tobacco']}"
+            d[q_key] = q
+        dic_out[label] = d
+    return dic_out
+
+================
+File: check_script.py
+================
+import argparse
+import logging
+import random
+from datetime import datetime, timedelta
+from build_db_new import MedicareSupplementRateDB
+import asyncio
+from aiolimiter import AsyncLimiter
+from zips import zipHolder
+import json
+import os
+import libsql_experimental as libsql
+import traceback
+from collections import defaultdict
+from pprint import pprint
+
+async def sync_turso():
+    url = os.getenv("NEW_QUOTE_DB_URL")
+    key = os.getenv("NEW_QUOTE_DB_KEY")
+    conn = libsql.connect("replica.db", sync_url=url, auth_token=key)
+    conn.sync()
+    return conn
+
+def validate_effective_date(date_str: str) -> datetime:
+    """Validate and parse effective date string"""
+    try:
+        date = datetime.strptime(date_str, '%Y-%m-%d')
+        if date.day != 1:
+            raise ValueError("Effective date must be the first day of a month")
+        return date
+    except ValueError as e:
+        raise ValueError(f"Invalid effective date format: {e}")
+
+def get_default_effective_date(months_ahead: int = 0) -> str:
+    """Get the effective date (first of next month + optional months ahead)"""
+    today = datetime.now()
+    if today.day == 1 and months_ahead == 0:
+        return today.strftime('%Y-%m-%d')
+    next_month = today.replace(day=1) + timedelta(days=32)
+    target_date = next_month.replace(day=1)
+    if months_ahead > 0:
+        for _ in range(months_ahead):
+            target_date = (target_date + timedelta(days=32)).replace(day=1)
+    return target_date.strftime('%Y-%m-%d')
+
+async def process_state_tasks(db, state, num_zips, rate_limiter, effective_date):
+    zip_holder = zipHolder("static/uszips.csv")
+    state_zips = [k for k, v in zip_holder.zip_states.items() if v == state]
+    
+    if not state_zips:
+        logging.warning(f"No ZIP codes found for state: {state}")
+        return None
+
+    async def process_zip(random_zip):
+        try:
+            logging.info(f"Processing state: {state}, zip: {random_zip}, effective date: {effective_date}")
+            async with rate_limiter:
+                r, s, v = await db.check_rate_changes(state, random_zip, effective_date)
+            return {
+                "zip": random_zip,
+                "state": state,
+                "effective_date": effective_date,
+                #"current_rates": r,
+                #"stored_rates": s,
+                "changes": v
+            }
+        except Exception as e:
+            logging.error(f"Error processing state: {state}, zip: {random_zip}. Error: {str(e)}")
+            logging.error(traceback.format_exc())
+            return {
+                "zip": random_zip,
+                "state": state,
+                "effective_date": effective_date,
+                #"current_rates": None,
+                #"stored_rates": None,
+                "changes": None,
+                "error": str(e)
+            }
+
+    selected_zips = random.sample(state_zips, min(num_zips, len(state_zips)))
+    tasks = [process_zip(zip_code) for zip_code in selected_zips]
+    return tasks
+
+
+def print_changes(changes):
+    """Print formatted rate changes"""
+    if not changes:
+        logging.info("No changes found in any state or NAIC code.")
+        return
+
+    for state, naic_data in changes.items():
+        logging.info(f"\nState: {state}")
+        for naic, change_types in naic_data.items():
+            logging.info(f"  NAIC: {naic}")
+            if 'modified' in change_types:
+                logging.info("    Modified rates")
+            if 'new' in change_types:
+                logging.info("    New rates")
+
+async def process_rate_changes(states_to_process, dates_to_process, num_zips=1, db_path=None, 
+                             output_file=None, no_sync=False):
+    """
+    Process rate changes for given states and dates.
+    
+    Args:
+        states_to_process (list): List of state codes to process
+        dates_to_process (list): List of effective dates to check
+        num_zips (int): Number of random ZIP codes to use per state
+        db_path (str): Path to database file
+        output_file (str): Path to output file
+        no_sync (bool): Whether to skip Turso sync
+    
+    Returns:
+        dict: Results of rate changes by date
+    """
+    date_results = {date: {
+        'effective_date': date,
+        'states_with_changes': set(),
+        'changes': {}
+    } for date in dates_to_process}
+
+    try:
+        if not no_sync:
+            await sync_turso()
+
+        db = MedicareSupplementRateDB(db_path=db_path)
+        logging.info(f"Using database: {db_path}")
+        await db.cr.async_init()
+        await db.cr.fetch_token()
+
+        rate_limiter = AsyncLimiter(20, 1)
+
+        # Process each state
+        tasks = []
+        task_index = {}
+        task_count = 0
+        for state in states_to_process:
+            for effective_date in dates_to_process:
+                state_tasks = await process_state_tasks(db, state, num_zips, rate_limiter, effective_date)
+                if state_tasks:
+                    ii = task_count
+                    task_count += len(state_tasks)
+                    task_index[(state, effective_date)] = (ii,task_count)
+                    tasks.extend(state_tasks)
+
+        results_all = await asyncio.gather(*tasks)
+        
+        if results_all:
+            for result in results_all:
+                effective_date = result['effective_date']
+                dic_to_extend = date_results.get(effective_date, {})
+                state = result['state']
+                change_dic = dic_to_extend.get('changes',{}).get(state,{})
+                any_changes = False
+                for naic, bool_ in result['changes'].items():
+                    flag = bool_ or change_dic.get(naic, False)
+                    change_dic[naic] = flag
+                    any_changes = any_changes or flag
+                if any_changes:
+                    dic_to_extend['states_with_changes'].add(state)
+                dic_to_extend['changes'][state] = change_dic
+                date_results[effective_date] = dic_to_extend
+
+        for k, v in date_results.items():
+            v['states_with_changes'] = list(v['states_with_changes'])
+            date_results[k] = v
+                
+        if date_results and output_file:
+            with open(output_file, 'w') as f:
+                json.dump(date_results, f, indent=2)
+            logging.info(f"Results written to {output_file}")
+
+        return date_results
+
+    except Exception as e:
+        logging.error(f"Error in processing: {str(e)}")
+        logging.error(traceback.format_exc())
+        raise
+
+async def main():
+    parser = argparse.ArgumentParser(description="Test Medicare Supplement Rate changes.")
+    parser.add_argument("-a", "--all", action="store_true", help="Process all states")
+    parser.add_argument("--multiple", nargs="+", help="Process multiple specified states")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress console output")
+    parser.add_argument("-n", "--num_zips", type=int, default=1, help="Number of random ZIP codes to use per state")
+    parser.add_argument("-o", "--output", type=str, help="Output file name")
+    parser.add_argument("-d", "--db", type=str, help="Database file name")
+    parser.add_argument("-e", "--effective-date", type=str, help="Effective date (YYYY-MM-DD)")
+    parser.add_argument("-f", "--full-changes", action="store_true", default=False, help="Output full changes")
+    parser.add_argument("--no-sync", action="store_true", help="Do not sync Turso replica")
+    parser.add_argument("state", nargs="?", help="Process a single state")
+    parser.add_argument("-m", "--months", type=int, help="Number of months ahead to check")
+    parser.add_argument("-g", "--group", type=int, help="Process group of states")
+
+    state_list = [
+        'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+        'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+        'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+        'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+        'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+        'DC'
+    ]
+    
+    args = parser.parse_args()
+    
+    # Get list of dates to process
+    dates_to_process = []
+    if args.effective_date:
+        dates_to_process = [args.effective_date]
+    elif args.months:
+        for i in range(args.months-1, -1, -1):
+            dates_to_process.append(get_default_effective_date(i))
+    else:
+        dates_to_process = [get_default_effective_date()]
+
+    # Define states to process
+    states_to_process = []
+    if args.all:
+        states_to_process = state_list
+    elif args.multiple:
+        states_to_process = [s for s in args.multiple if s in state_list]
+    elif args.group:
+        if args.group in range(1, 6):
+            i = (args.group - 1) * 10
+            j = i + 10 if i + 10 < 51 else 51
+            states_to_process = state_list[i:j]
+        else:
+            logging.error(f"Invalid group number: {args.group}. Must be between 1 and 5")
+            return
+    elif args.state and args.state in state_list:
+        states_to_process = [args.state]
+
+    if not states_to_process:
+        logging.error("No valid states to process")
+        return
+
+    results = await process_rate_changes(
+        states_to_process=states_to_process,
+        dates_to_process=dates_to_process,
+        num_zips=args.num_zips,
+        db_path=args.db,
+        output_file=args.output,
+        no_sync=args.no_sync
+    )
+
+    if results and not args.output:
+        print(json.dumps(results, indent=2))
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+================
+File: config.py
+================
+import os
+
+class Config(object):
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'you-will-never-guess'
+    CSG_TOKEN = os.environ.get('CSG_TOKEN') or None
+    API_KEY = os.environ.get('API_KEY') or '2150e5ea35698640582ef9c511c8090210b2f7a0f8e53672094b8e5d3c7f9275'
+    #BASIC_AUTH_FORCE = True
+
+================
+File: copy_data_forward.py
+================
+from build_db_new import MedicareSupplementRateDB
+
+import asyncio
+from pprint import pprint
+
+import logging
+import time
+
+from datetime import datetime, timedelta
+ar = asyncio.run
+
+async def init(db):
+    await db.cr.async_init()
+    await db.cr.fetch_token()
+
+state_list = [
+            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+            "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+            "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+            "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+            "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+            "DC"
+        ]
+
+def get_default_effective_date(months_ahead: int = 0) -> str:
+    """Get the effective date (first of next month + optional months ahead)"""
+    today = datetime.now()
+    if today.day == 1 and months_ahead == 0:
+        return today.strftime('%Y-%m-%d')
+    next_month = today.replace(day=1) + timedelta(days=32)
+    target_date = next_month.replace(day=1)
+    if months_ahead > 0:
+        for _ in range(months_ahead):
+            target_date = (target_date + timedelta(days=32)).replace(day=1)
+    return target_date.strftime('%Y-%m-%d')
+
+async def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Fetch quotes for random zip codes")
+    parser.add_argument("-d", "--db", type=str, help="Database to use")
+    parser.add_argument("-m", "--months", type=int, default=3, help="Number of months to copy forward")
+    parser.add_argument("start_date", type=str, help="Start date in YYYY-MM-DD format to copy rates from")
+    args = parser.parse_args()
+    db = MedicareSupplementRateDB(args.db)
+
+    # Initialize database connection and token inside the async context
+    await init(db)
+    tasks = []
+    target_dates_all = [get_default_effective_date(i) for i in range(100)]
+    # Find index of start_date in target_dates_all
+    try:
+        start_idx = target_dates_all.index(args.start_date)
+    except ValueError:
+        raise ValueError(f"Start date {args.start_date} not found in target dates. Must be first of month within next 100 months.")
+    # Get next m dates after start_date
+    target_dates = target_dates_all[start_idx+1:start_idx+1+args.months]
+    logging.info(f"Copying rates from {args.start_date} to dates: {target_dates}")
+    for state in state_list:
+        naics = db.get_existing_naics(state)
+        for naic in naics:
+            for td in target_dates:
+                tasks.append(db.copy_rates(state, naic, args.start_date, td))
+                                           
+    logging.info(f"Tasks: {len(tasks)}. Running sequentially.")
+    start_time = time.time()
+    for t in tasks:
+        await t
+    end_time = time.time()
+    logging.info(f"Time taken: {end_time - start_time} seconds to run {len(tasks)} tasks")
+    return db
+    
+if __name__ == "__main__":
+    db = asyncio.run(main())
+
+================
+File: date_utils.py
+================
+from datetime import datetime, timedelta
+from typing import List
+import re
+
+def get_effective_dates(num_months: int = 6) -> List[str]:
+    """
+    Generate a list of effective dates starting from the first of next month
+    for the specified number of months.
+    
+    Args:
+        num_months (int): Number of months to generate dates for (default: 6)
+    
+    Returns:
+        List[str]: List of dates in YYYY-MM-DD format
+    """
+    # Start with first day of next month
+    today = datetime.now()
+    if today.day == 1:
+        start_date = today
+    else:
+        start_date = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+    
+    dates = []
+    current_date = start_date
+    for _ in range(num_months):
+        dates.append(current_date.strftime('%Y-%m-%d'))
+        # Move to first day of next month
+        current_date = (current_date + timedelta(days=32)).replace(day=1)
+    
+    return dates
+
+def validate_effective_date(date_str: str) -> bool:
+    """
+    Validate that a date string is in YYYY-MM-DD format and is the first day of a month.
+    
+    Args:
+        date_str (str): Date string to validate
+        
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+        return False
+        
+    try:
+        date = datetime.strptime(date_str, '%Y-%m-%d')
+        return date.day == 1
+    except ValueError:
+        return False
+
+def copy_effective_date_data(db, from_date: str, to_date: str) -> None:
+    """
+    Copy rate store data from one effective date to another.
+    
+    Args:
+        db: Database connection object
+        from_date (str): Source effective date in YYYY-MM-DD format
+        to_date (str): Target effective date in YYYY-MM-DD format
+    """
+    if not validate_effective_date(from_date) or not validate_effective_date(to_date):
+        raise ValueError("Both dates must be in YYYY-MM-DD format and be the first day of a month")
+        
+    cursor = db.connect_turso()
+    
+    # Copy data from source date to target date
+    cursor.execute("""
+        INSERT OR REPLACE INTO rate_store (key, effective_date, value)
+        SELECT key, ?, value
+        FROM rate_store
+        WHERE effective_date = ?
+    """, (to_date, from_date))
+    
+    db.conn.commit()
+
+================
+File: db_operations_log.py
+================
+import json
+from datetime import datetime
+from typing import Any, List, Tuple
+
+class DBOperationsLogger:
+    def __init__(self, log_file_path: str):
+        self.log_file_path = log_file_path
+
+    def log_operation(self, operation: str, query: str, params: Any = None):
+        log_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'operation': operation,
+            'query': query,
+            'params': params
+        }
+        with open(self.log_file_path, 'a') as f:
+            f.write(json.dumps(log_entry) + '\n')
+
+    def replay_operations(self, db_connection):
+        cursor = db_connection.cursor()
+        with open(self.log_file_path, 'r') as f:
+            for line in f:
+                operation = json.loads(line)
+                if operation['params']:
+                    cursor.execute(operation['query'], operation['params'])
+                else:
+                    cursor.execute(operation['query'])
+        db_connection.commit()
+
+================
+File: filter_utils.py
+================
+from pydantic import BaseModel
+from typing import List, Optional
+import logging
+class Quote(BaseModel):
+    age: int
+    gender: str
+    plan: str
+    tobacco: int
+    rate: float
+    discount_rate: float
+    discount_category: Optional[str] = None
+
+
+class QuoteInt(BaseModel):
+    age: int
+    gender: str
+    plan: str
+    tobacco: int
+    rate: int
+    discount_rate: int
+    discount_category: Optional[str] = None
+class QuoteResponse(BaseModel):
+    naic: str
+    group: int
+    company_name: str
+    quotes: List[Quote | QuoteInt]
+
+class QuoteComparison(BaseModel):
+    has_differences: bool
+    db_quotes: List[QuoteResponse]
+    csg_quotes: List[QuoteResponse]
+    differences: Optional[List[str]] = None
+
+def filter_quote_fields(quoteResponse):
+    desired_fields = {
+        'age', 'age_increases', 'company_base', 'discounts', 'discount_category', 'fees', 'gender',
+        'plan', 'rate', 'rate_increases', 'rating_class', 'tobacco', 'view_type',
+        'location_base'
+    }
+    filtered_quotes = []
+    quotes, label = quoteResponse
+    for quote in quotes:
+        rating_class = quote.get('rating_class')
+        naic = quote['company_base'].get('naic')
+        if quote.get('select'):
+            continue
+        if quote.get('rating_class') not in [None, '', 'Standard', 'Achieve', 'Value']:
+            if naic == '79413':
+                if 'Standard' in rating_class and 'Household' not in rating_class:
+                    pass    
+                else:
+                    continue
+            else:
+                continue
+
+        d = {field: quote[field] for field in desired_fields}
+        if len(d['location_base']['zip5']) > 0:
+            d['location'] = d['location_base']['zip5']
+        else:
+            d['location'] = d['location_base']['county']
+        if d['discount_category'] == '':
+            d['discount_category'] = None
+        comp = d.pop('company_base')
+        d.pop('location_base')
+        d['naic'] = comp.get('naic')
+        d['name'] = comp.get('name')
+        rate = d.pop('rate')
+        d['rate'] = rate.get('month', 0) / 100
+        # debug
+        if d['rate'] == 214.88:
+            with open('debug.log', 'a') as f:
+                f.write(f"Found rate match: {d}\n")
+        if d['naic'] == '60380' and d['age'] == 65 and d['plan'] == 'G' and d['gender'] == 'M' and d['tobacco'] == 0:
+            with open('debug.log', 'a') as f:
+                f.write(f"Found AFLAC rate: {d}\n")
+        filtered_quotes.append(d)
+
+    # Check for duplicate quotes and keep only the one with the higher rate
+    unique_quotes = {}
+    for quote in filtered_quotes:
+        key = (quote['naic'], quote['tobacco'], quote['age'], quote['plan'], quote['gender'])
+        if key in unique_quotes:
+            if quote['rate'] > unique_quotes[key]['rate']:
+                unique_quotes[key] = quote
+        else:
+            unique_quotes[key] = quote
+    
+    filtered_quotes = list(unique_quotes.values())
+    return filtered_quotes
+
+
+def use_int(quote):
+    return QuoteInt(
+        age=quote.age,
+        gender=quote.gender,
+        plan=quote.plan,
+        tobacco=quote.tobacco,
+        rate=int(quote.rate*100),
+        discount_rate=int(quote.discount_rate*100),
+        discount_category=quote.discount_category
+    )
+
+def filter_quote(quote):
+    desired_fields = {
+        'age', 'age_increases', 'company_base', 'discounts', 'discount_category', 'fees', 'gender',
+        'plan', 'rate', 'rate_increases', 'rating_class', 'tobacco', 'view_type',
+        'location_base'
+    }
+
+    rating_class = quote.get('rating_class')
+    naic = quote['company_base'].get('naic')
+    if quote.get('select'):
+        return None
+    if quote.get('rating_class') not in [None, '', 'Standard', 'Achieve', 'Value']:
+        if naic == '79413':
+            if 'Standard' in rating_class and 'Household' not in rating_class:
+                pass    
+            else:
+                return None
+        else:
+            return None
+
+    d = {field: quote[field] for field in desired_fields}
+    if len(d['location_base']['zip5']) > 0:
+        d['location'] = d['location_base']['zip5']
+    else:
+        d['location'] = d['location_base']['county']
+    comp = d.pop('company_base')
+    d.pop('location_base')
+    d['naic'] = comp.get('naic')
+    d['name'] = comp.get('name')
+    rate = d.pop('rate')
+    d['rate'] = rate.get('month', 0) / 100
+    return d
+
+
+def use_int(quote):
+    return QuoteInt(
+        age=quote.age,
+        gender=quote.gender,
+        plan=quote.plan,
+        tobacco=quote.tobacco,
+        rate=int(quote.rate*100),
+        discount_rate=int(quote.discount_rate*100),
+        discount_category=quote.discount_category
+    )
+
+================
+File: hello.py
+================
+def main():
+    print("Hello from blitz-quote-engine2!")
+
+
+if __name__ == "__main__":
+    main()
+
+================
+File: map_file.py
+================
+import argparse
+import logging
+from datetime import datetime
+from build_db_new import MedicareSupplementRateDB
+import asyncio
+from typing import List, Optional
+from date_utils import get_effective_dates
+from filter_utils import filter_quote_fields
+
+def setup_logging(quiet: bool) -> None:
+    log_filename = 'map_all.log'
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+
+    file_handler = logging.FileHandler(log_filename, mode='a')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter(log_format))
+
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+
+    if not quiet:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(logging.Formatter(log_format))
+        root_logger.addHandler(console_handler)
+
+def get_previous_month(date_str: str) -> str:
+    """Get the first day of the previous month"""
+    date = datetime.strptime(date_str, '%Y-%m-%d')
+    if date.month == 1:
+        return f"{date.year-1}-12-01"
+    return f"{date.year}-{date.month-1:02d}-01"
+
+async def process_state_naics(db, state: str, effective_date: str, dic: dict) -> set:
+    available_naics = await db.get_available_naics(state, effective_date)
+    selected_naics = set([x['naic'] for x in db.get_selected_carriers()])
+    ls = available_naics.intersection(selected_naics)
+    dic[state] = ls
+ 
+
+    
+
+
+async def main() -> None:
+    parser = argparse.ArgumentParser(description="Process Medicare Supplement Rate data for states.")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress console output")
+    parser.add_argument("-f", "--file", type=str, required=True, help="JSON file from check_script.py containing states and dates to process")
+    parser.add_argument("-d", "--db", type=str, required=True, help="Database file name")
+    parser.add_argument("-m", "--months", type=int, default=6, help="Number of months to process")
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be processed without making changes")
+
+    args = parser.parse_args()
+    logging.info(f"args: {args}")
+    setup_logging(args.quiet)
+
+    if not args.dry_run:
+        db = MedicareSupplementRateDB(db_path=args.db)
+        await db.cr.async_init()
+        await db.cr.fetch_token()
+
+    # Create a list of (state, effective_date) tuples to process
+    effective_dates = get_effective_dates(args.months)
+    state_date_naic_tuples = []
+
+
+    import json
+    with open(args.file, 'r') as f:
+        data = json.load(f)
+
+    states_to_process_set = set()
+        
+    # Extract specific state/date combinations where changes were detected
+    for effective_date, date_entry in data.items():
+        assert effective_date == date_entry['effective_date']
+        for state, dic in date_entry['changes'].items():
+            for naic, changed in dic.items():
+                if changed:
+                    state_date_naic_tuples.append((state, effective_date, naic))
+
+    states_to_process = list(states_to_process_set)
+    if state_date_naic_tuples:
+        logging.info(f"Found state/date pairs to process: {state_date_naic_tuples}")
+    else:
+        logging.info("No changes detected in input file")
+        return
+   
+
+
+    # Sort pairs by date to ensure proper processing order
+    state_date_naic_tuples.sort(key=lambda x: x[1])
+
+    if args.dry_run:
+        print("\nDRY RUN - Would update the following state/date combinations:\n")
+        current_date = None
+        for state, effective_date, naic in state_date_naic_tuples:
+            if effective_date != current_date:
+                current_date = effective_date
+                print(f"Effective Date: {effective_date}")
+            print(f"    - {state} {naic}")
+        return
+
+
+    # Get available naics for each state
+
+    # get state
+    tasks = []
+    for state, effective_date, naic in state_date_naic_tuples:
+        tasks.append(db.set_state_map_naic(naic, state))
+    logging.info(f"Processing {len(tasks)} tasks")
+    await asyncio.gather(*tasks)
+
+    rate_tasks = []
+    for state, effective_date, naic in state_date_naic_tuples:
+        rate_tasks.extend(db.get_rate_tasks(state, naic, effective_date))
+
+    logging.info(f"Processing {len(rate_tasks)} rate tasks")
+    return await asyncio.gather(*rate_tasks)     
+
+
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+================
+File: map_sequential.py
+================
+import argparse
+import logging
+from datetime import datetime
+from build_db_new import MedicareSupplementRateDB
+import asyncio
+from typing import List, Dict, Set, Tuple
+from check_script import process_rate_changes
+from collections import defaultdict
+from pprint import pprint
+import json
+from datetime import timedelta
+
+state_list = [
+            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+            "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+            "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+            "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+            "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+            "DC"
+        ]
+
+def setup_logging(quiet: bool) -> None:
+    log_filename = 'map_sequential.log'
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+
+    file_handler = logging.FileHandler(log_filename, mode='a')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter(log_format))
+
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+
+    if not quiet:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(logging.Formatter(log_format))
+        root_logger.addHandler(console_handler)
+
+def get_default_effective_date(months_ahead: int = 0) -> str:
+    """Get the effective date (first of next month + optional months ahead)"""
+    today = datetime.now()
+    if today.day == 1 and months_ahead == 0:
+        return today.strftime('%Y-%m-%d')
+    next_month = today.replace(day=1) + timedelta(days=32)
+    target_date = next_month.replace(day=1)
+    if months_ahead > 0:
+        for _ in range(months_ahead):
+            target_date = (target_date + timedelta(days=32)).replace(day=1)
+    return target_date.strftime('%Y-%m-%d')
+
+def get_previous_month(date_str: str) -> str:
+    date = datetime.strptime(date_str, '%Y-%m-%d')
+    if date.month == 1:
+        return f"{date.year-1}-12-01"
+    return f"{date.year}-{date.month-1:02d}-01"
+
+async def process_state_naics(db, state: str, effective_date: str, dic: dict):
+    available_naics = await db.get_available_naics(state, effective_date)
+    selected_naics = set([x['naic'] for x in db.get_selected_carriers()])
+    ls = available_naics.intersection(selected_naics)
+    dic[state] = ls
+ 
+
+async def process_check_task(db, state: str, effective_date: str, dic: dict, available_naics: set, retry = 3):
+    try:
+            # Create local results first
+        _, _, v = await db.check_rate_changes(state, None, effective_date, available_naics)
+        vfilt = {k: v for k, v in v.items() if v}
+        
+        if sum(1 for x in v.values() if x) > 1:
+            # Return results instead of modifying shared dict
+            return {
+                'state': state,
+                'changes': vfilt
+            }
+        return None
+    except Exception as e:
+        if retry > 0:
+            logging.error(f"Error processing {state} at {effective_date}: {e}. Retrying...")
+            return await process_check_task(db, state, effective_date, dic, available_naics, retry - 1)
+        logging.error(f"Error processing {state} at {effective_date}: {e}. Giving up.")
+        return { 'state': state, 'changes': {}, 'error': str(e) }
+    
+
+async def main():
+    parser = argparse.ArgumentParser(description="Sequentially process and map Medicare Supplement Rate data")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress console output")
+    parser.add_argument("-d", "--db", type=str, required=True, help="Database file name")
+    parser.add_argument("-m", "--months", type=int, default=3, help="Number of months to process")
+    parser.add_argument("-n", "--nzips", type=int, default=1, help="Number of ZIP codes to process per state during check")
+    parser.add_argument("-s", "--state", nargs="+", help="Process a single or multiple states")
+    parser.add_argument("--dry-run", action="store_true", help="Dry run the script without copying rates")
+    parser.add_argument("-o", "--output", type=str, help="Output file name")
+    parser.add_argument("--remap", action="store_true", help="Remap the rates if applicable before moving forward")
+    parser.add_argument("--log-file", type=str, help="Custom log file for database operations")
+    
+    args = parser.parse_args()
+    setup_logging(args.quiet)
+    logger = logging.getLogger(__name__)
+
+    logger.info("Connecting to database...")
+    db = MedicareSupplementRateDB(db_path=args.db, log_file=args.log_file)
+    await db.cr.async_init()
+    await db.cr.fetch_token()
+
+    # Load data from check script results
+    dates = [get_default_effective_date(i) for i in range(args.months)]
+    logger.info(f"Processing dates: {dates}")
+
+    # Sort dates in ascending order
+    states_to_process = set(args.state) if args.state else set(state_list)
+    logger.info(f"Processing states: {states_to_process}")
+
+    state_available = {}
+    state_available_tasks = []
+
+    # this lets us only run the check once, not every month
+    for state in states_to_process: #, effective_date in state_date_pairs:
+        state_available_tasks.append(process_state_naics(db, state, dates[0], state_available))
+    await asyncio.gather(*state_available_tasks)
+
+    # Add semaphore to limit concurrent tasks
+    semaphore = asyncio.Semaphore(100)  # Adjust number based on your needs
+    
+    async def bounded_process_check_task(*args, **kwargs):
+        async with semaphore:
+            return await process_check_task(*args, **kwargs)
+    
+    # Collect all states and NAICs
+    out = {}
+    for date in dates:
+        check_tasks = []
+        for state in states_to_process:
+            available_naics = state_available.get(state)
+            for _ in range(args.nzips):
+                check_tasks.append(bounded_process_check_task(db, state, date, out, available_naics))
+        
+        logger.info(f"Checking rate changes for {len(states_to_process)} states in {len(check_tasks)} tasks...")
+        if args.dry_run:
+            logging.info(f"Dry run, skipping check tasks")
+            results = []
+        else:
+            results = await asyncio.gather(*check_tasks)
+        
+        # Combine results after all tasks complete
+        states_with_changes = []
+        changes = {}
+        errors = {}
+        for result in results:
+            if result:
+                states_with_changes.append(result['state'])
+                changes[result['state']] = result['changes']
+            if result and 'error' in result:
+                errors[result['state']] = result['error']
+        
+        date_entry = {
+            'effective_date': date,
+            'states_with_changes': states_with_changes,
+            'changes': changes, 
+            'errors': errors
+        }
+        out[date] = date_entry
+
+        if args.remap and changes and not args.dry_run:
+            # Create semaphore for map tasks
+            map_semaphore = asyncio.Semaphore(100)
+
+            async def bounded_set_map_task(naic, state):
+                async with map_semaphore:
+                    return await db.set_state_map_naic(naic, state)
+
+            set_map_tasks = []
+            for state, dic in changes.items():
+                for naic, bool_ in dic.items():
+                    if bool_:
+                        set_map_tasks.append(bounded_set_map_task(naic, state))
+            logging.info(f"Setting state map for {len(set_map_tasks)} states in {len(set_map_tasks)} tasks...")
+            await asyncio.gather(*set_map_tasks)
+
+            # Create semaphore for rate tasks
+            rate_semaphore = asyncio.Semaphore(100)
+
+            async def bounded_rate_task(state, naic, date):
+                async with rate_semaphore:
+                    return await db.get_rate_tasks(state, naic, date)
+
+            rate_tasks = []
+            for state, dic in changes.items():
+                for naic, bool_ in dic.items():
+                    if bool_:
+                        rate_tasks.append(bounded_rate_task(state, naic, date))
+            logging.info(f"Processing {len(rate_tasks)} rate tasks")
+            results = await asyncio.gather(*rate_tasks)
+            logging.info(f"Processed {len(results)} rate tasks for {state}")
+
+
+    logger.info("Processing complete")
+    
+    if args.output:
+        with open(args.output, 'w') as f:
+            json.dump(out, f, indent=2)
+
+    if args.dry_run:
+        pprint(out)
+        return out
+    
+
+    
+
+if __name__ == "__main__":
+    r = asyncio.run(main())
+
+================
+File: normalize_county.py
+================
+def normalize_county_name(county: str) -> str:
+    """
+    Normalize county names by removing common suffixes and standardizing 'Saint' to 'ST'.
+    
+    Args:
+        county: Input county name (str)
+        
+    Returns:
+        Normalized county name (str)
+    """
+    # Convert to uppercase for consistent processing
+    county = county.upper().strip()
+    
+    # Standardize 'Saint' to 'ST'
+    saint_variants = ["SAINT", "ST.", "STE.", "ST"]
+    for variant in saint_variants:
+        if county.startswith(variant):
+            county = county.replace(variant, "ST", 1)
+            break
+    
+    # Remove common suffixes
+    suffixes = [
+        " COUNTY",
+        " PARISH",
+        " BOROUGH",
+        " CITY",
+        " AREA",
+        " MUNICIPALITY",
+        " DISTRICT"
+    ]
+    
+    # Remove any suffix
+    for suffix in suffixes:
+        if county.endswith(suffix):
+            county = county[:-len(suffix)]
+    
+    return county
+
+# Example usage and tests
+def test_county_normalizer():
+    test_cases = [
+        "Saint Louis County",
+        "St. Charles Parish",
+        "Ste. Genevieve Borough",
+        "St Louis City",
+        "Orleans Parish",
+        "New York Borough",
+        "King County",
+        "Jefferson Area"
+    ]
+    
+    print("Test Results:")
+    print("-" * 40)
+    for test in test_cases:
+        normalized = normalize_county_name(test)
+        print(f"Original: {test}")
+        print(f"Normalized: {normalized}")
+        print("-" * 40)
+
+if __name__ == "__main__":
+    test_county_normalizer()
+
+================
+File: tt.py
+================
+from build_db_new import MedicareSupplementRateDB
+from build_db_new import process_quote
+
+import asyncio
+from pprint import pprint
+
+import logging
+import time
+import copy
+
+ar = asyncio.run
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.models import CarrierSelection
+
+# Add global variable at the top level
+selected_naics = []
+
+
+async def init(db):
+    await db.cr.async_init()
+    await db.cr.fetch_token()
+
+
+state_list = [
+    "AL",
+    "AK",
+    "AZ",
+    "AR",
+    "CA",
+    "CO",
+    "CT",
+    "DE",
+    "FL",
+    "GA",
+    "HI",
+    "ID",
+    "IL",
+    "IN",
+    "IA",
+    "KS",
+    "KY",
+    "LA",
+    "ME",
+    "MD",
+    "MA",
+    "MI",
+    "MN",
+    "MS",
+    "MO",
+    "MT",
+    "NE",
+    "NV",
+    "NH",
+    "NJ",
+    "NM",
+    "NY",
+    "NC",
+    "ND",
+    "OH",
+    "OK",
+    "OR",
+    "PA",
+    "RI",
+    "SC",
+    "SD",
+    "TN",
+    "TX",
+    "UT",
+    "VT",
+    "VA",
+    "WA",
+    "WV",
+    "WI",
+    "WY",
+    "DC",
+]
+
+
+async def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Fetch quotes for random zip codes")
+    parser.add_argument("-d", "--db", type=str, help="Database to use")
+    args = parser.parse_args()
+
+    # Create SQLAlchemy engine and session
+    engine = create_engine(f"sqlite:///{args.db}")
+    Session = sessionmaker(bind=engine)
+    db_session = Session()
+
+    db = MedicareSupplementRateDB(args.db)
+
+    # Initialize database connection and token inside the async context
+    await init(db)
+
+    # Get selected carriers using the correct method
+    global selected_naics
+    selected_carriers = db.get_selected_carriers()
+    selected_naics = set([carrier["naic"] for carrier in selected_carriers])
+
+    return db, db_session
+    tasks = []
+    for state in state_list:
+        naics = db.get_existing_naics(state)
+        for naic in naics:
+            for td in ["2025-02-01", "2025-03-01", "2025-04-01"]:
+                tasks.append(db.copy_rates(state, naic, "2025-01-01", td))
+
+    logging.info(f"Tasks: {len(tasks)}. Running sequentially.")
+    start_time = time.time()
+    for t in tasks:
+        await t
+    end_time = time.time()
+    logging.info(f"Time taken: {end_time - start_time} seconds")
+    return db
+
+
+if __name__ == "__main__":
+    db, db_session = asyncio.run(main())
+    p = {
+        "age": 67,
+        "gender": "M",
+        "plan": "G",
+        "tobacco": 0,
+        "apply_discounts": 0,
+        "zip5": "65622",
+        "select": 0,
+        "naic": "79413",
+    }
+
+    # Create an async function to handle the concurrent quote fetching
+    r = ar(db.cr.fetch_quote(**p))
+
+    db_session.close()
+
+================
+File: write-test.py
+================
+import libsql_experimental as libsql
+import readline
+import os
+
+
+def main():
+    # Expand the home directory if needed
+    file = os.path.expanduser("~/libsql-client-ts/packages/libsql-client/examples/local.db")
+
+    # Use context manager for proper connection handling
+    conn = libsql.connect(file)
+    # Create table
+    conn.execute("CREATE TABLE IF NOT EXISTS guest_book_entries (comment TEXT)")
+
+    # Get user input
+    comment = input("Enter your comment: ")
+
+    # Insert the comment - convert list to tuple
+    conn.execute("INSERT INTO guest_book_entries (comment) VALUES (?)", (comment,))
+
+    conn.commit()
+
+    # Query and display results
+    print("\nGuest book entries:")
+    cursor = conn.execute("SELECT * FROM guest_book_entries")
+    for row in cursor.fetchall():
+        print(f" - {row[0]}")
+
+
+if __name__ == "__main__":
+    main()
+
+================
+File: zips.py
+================
+# zips.py
+from csv import DictReader
+
+class zipHolder():
+
+    def __init__(self, file_name):
+        self.load_zips(file_name)
+
+    def __call__(self, zip5, show_state=False):
+        county = self.lookup_county(zip5)
+        if show_state:
+            state = self.lookup_state(zip5)
+            return county, state
+        return county
+
+    def lookup_county(self, zip5):
+        return self.zip_counties.get(str(zip5).zfill(5), ['None'])
+    
+    def lookup_county2(self, zip5):
+        return self.zip_counties.get(str(zip5).zfill(5), None)
+
+    def lookup_state(self, zip5):
+        return self.zip_states.get(str(zip5).zfill(5), ['None'])
+
+    def lookup_state2(self, zip5):
+        return self.zip_states.get(str(zip5).zfill(5), 'None')
+
+    def lookup_zip_by_county(self, state, county):
+        return self.zip_by_county.get(f"{state.upper()}",{}).get(county.upper(), [])
+    
+    def lookup_zips_by_state(self, state):
+        return self.zip_by_states.get(state, [])
+
+    def load_zips(self, file_name):
+        zip_c = {}
+        zip_s = {}
+        with open(file_name, mode='r') as cf:
+            cr = DictReader(cf)
+            first_row = True
+            for row in cr:
+                if first_row:
+                    first_row = False
+                else:
+                    zip_c[(row['zip'])] = [
+                        i.upper() for i in row['county_names_all'].split('|')
+                    ]
+                    zip_s[(row['zip'])] = row['state_id']
+        zip_by_county = {}
+        for zip, clist in zip_c.items():
+            for c in clist:
+                state = zip_s.get(zip)
+                dic = zip_by_county.get(state, {})
+                ls = dic.get(c, [])
+                ls.append(zip)
+                dic[c] = ls
+                zip_by_county[state] = dic
+        self.zip_counties = zip_c
+        self.zip_states = zip_s
+        self.zip_by_county = zip_by_county
+        zip_by_states = {}
+        for zip, state in zip_s.items():
+            ls = zip_by_states.get(state, [])
+            ls.append(zip)
+            zip_by_states[state] = ls
+        self.zip_by_states = zip_by_states
+
+
+
+================================================================
+End of Codebase
+================================================================
