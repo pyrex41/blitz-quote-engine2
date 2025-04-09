@@ -210,10 +210,12 @@ dependencies = [
     { name = "fastapi" },
     { name = "gdown" },
     { name = "httpx" },
+    { name = "libsql-experimental" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "rapidfuzz" },
     { name = "replit" },
+    { name = "requests" },
     { name = "sqlalchemy" },
     { name = "sqlalchemy-libsql" },
     { name = "thefuzz" },
@@ -230,10 +232,12 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.6" },
     { name = "gdown", specifier = ">=5.2.0" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "libsql-experimental", specifier = ">=0.0.45" },
     { name = "pydantic", specifier = ">=2.10.3" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "rapidfuzz", specifier = ">=3.10.1" },
     { name = "replit", specifier = ">=4.1.0" },
+    { name = "requests", specifier = ">=2.32.3" },
     { name = "sqlalchemy", specifier = ">=2.0.36" },
     { name = "sqlalchemy-libsql", specifier = ">=0.1.0" },
     { name = "thefuzz", extras = ["speedup"], specifier = ">=0.22.1" },
@@ -558,6 +562,17 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d2/76/8968356d45ee174ebe966ff0112bed1bd932851d6532737c2ee8b40ed6e0/libsql_client-0.3.1.tar.gz", hash = "sha256:1815893bf5271f1940919b2a583ebbafb0ec54028e9d01e4eda151a6e85a8618", size = 39605 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/83/f0/b0d7c7331f975bcc3effd01abb094723891fd42bca7f702b4a0cf06c1bff/libsql_client-0.3.1-py3-none-any.whl", hash = "sha256:088756f65802f5ca5857a99cf374d9b7aa015b97b91b0cb725ef6a033e23268b", size = 46100 },
+]
+
+[[package]]
+name = "libsql-experimental"
+version = "0.0.45"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/e6/6cba36c679d46fe18f44d7f4f9230fdc078fb51c04efad174f123f3d53fa/libsql_experimental-0.0.45.tar.gz", hash = "sha256:3e5b9230ed4aa61f9328ca823a0ac261f9190d2c96dd5a94f2346c2aed2c38dd", size = 31764 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/ae/3882efeddb1b7c21498ecb518cf20e12ca34f6a6a1f923aae131eef26489/libsql_experimental-0.0.45-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:1df9be84e95bbe31a14f37b95d5cd49cb7a858ea14596531cec4cb8b46c576ae", size = 4727419 },
+    { url = "https://files.pythonhosted.org/packages/cb/27/2d8f0a55314453ddc8e4f974e7e8a024371990391217bdeb2043bf56123c/libsql_experimental-0.0.45-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:f000985590dd3d87af08c6284077c36891977b74aaf79fd5a4e949a09e9abde9", size = 4503906 },
+    { url = "https://files.pythonhosted.org/packages/44/3d/0fb5b561cdb368a78c683da76bed09f2b72b47386f7d4e22b17b7e644610/libsql_experimental-0.0.45-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7c95c72f8ca19e4fa3b118118af5d45740f43abd39e8feb935763cdbf54d05a9", size = 5110836 },
 ]
 
 [[package]]
