@@ -1,5 +1,4 @@
 version = 1
-revision = 1
 requires-python = ">=3.13"
 
 [[package]]
@@ -196,10 +195,11 @@ dependencies = [
     { name = "babel" },
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "libsql-experimental" },
+    { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "rapidfuzz" },
     { name = "replit" },
+    { name = "sqlalchemy" },
     { name = "sqlalchemy-libsql" },
     { name = "thefuzz" },
     { name = "toolz" },
@@ -214,10 +214,11 @@ requires-dist = [
     { name = "babel", specifier = ">=2.16.0" },
     { name = "fastapi", specifier = ">=0.115.6" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "libsql-experimental", specifier = ">=0.0.41" },
+    { name = "pydantic", specifier = ">=2.10.3" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "rapidfuzz", specifier = ">=3.10.1" },
     { name = "replit", specifier = ">=4.1.0" },
+    { name = "sqlalchemy", specifier = ">=2.0.36" },
     { name = "sqlalchemy-libsql", specifier = ">=0.1.0" },
     { name = "thefuzz", extras = ["speedup"], specifier = ">=0.22.1" },
     { name = "toolz", specifier = ">=1.0.0" },
@@ -494,12 +495,6 @@ wheels = [
 ]
 
 [[package]]
-name = "libsql-experimental"
-version = "0.0.41"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3f/35/3c82419f305835f41f7062ae152640afda3d0444a787de57a68c0b07edc2/libsql_experimental-0.0.41.tar.gz", hash = "sha256:d72e3da6c2488fd6e4410ae74a5339886b8b54a62c71e63f72d05e27d9fb3288", size = 28842 }
-
-[[package]]
 name = "markupsafe"
 version = "3.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -624,6 +619,8 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/61/74/49f5d20c514ccc631b940cc9dfec45dcce418dc84a98463a2e2ebec33904/pycryptodomex-3.21.0-cp36-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:52e23a0a6e61691134aa8c8beba89de420602541afaae70f66e16060fdcd677e", size = 2257982 },
     { url = "https://files.pythonhosted.org/packages/92/4b/d33ef74e2cc0025a259936661bb53432c5bbbadc561c5f2e023bcd73ce4c/pycryptodomex-3.21.0-cp36-abi3-win32.whl", hash = "sha256:a3d77919e6ff56d89aada1bd009b727b874d464cb0e2e3f00a49f7d2e709d76e", size = 1779052 },
     { url = "https://files.pythonhosted.org/packages/5b/be/7c991840af1184009fc86267160948350d1bf875f153c97bb471ad944e40/pycryptodomex-3.21.0-cp36-abi3-win_amd64.whl", hash = "sha256:b0e9765f93fe4890f39875e6c90c96cb341767833cfa767f41b490b506fa9ec0", size = 1816307 },
+    { url = "https://files.pythonhosted.org/packages/af/ac/24125ad36778914a36f08d61ba5338cb9159382c638d9761ee19c8de822c/pycryptodomex-3.21.0-pp27-pypy_73-manylinux2010_x86_64.whl", hash = "sha256:feaecdce4e5c0045e7a287de0c4351284391fe170729aa9182f6bd967631b3a8", size = 1694999 },
+    { url = "https://files.pythonhosted.org/packages/93/73/be7a54a5903508070e5508925ba94493a1f326cfeecfff750e3eb250ea28/pycryptodomex-3.21.0-pp27-pypy_73-win32.whl", hash = "sha256:365aa5a66d52fd1f9e0530ea97f392c48c409c2f01ff8b9a39c73ed6f527d36c", size = 1769437 },
 ]
 
 [[package]]
