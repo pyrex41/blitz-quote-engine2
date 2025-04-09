@@ -1,2 +1,2 @@
-# Database files are now excluded via .gitignore
-# *.db filter=lfs diff=lfs merge=lfs -text
+# Database files are excluded in .gitignore
+# No LFS tracking
