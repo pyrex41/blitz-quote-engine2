@@ -10,7 +10,6 @@ from functools import reduce
 import asyncio
 import csv
 import logging
-import libsql_experimental as libsql  # Replace sqlite3 import
 import itertools
 import random
 from copy import copy
@@ -18,6 +17,7 @@ import operator
 from datetime import datetime, timedelta
 from db_operations_log import DBOperationsLogger
 from pprint import pprint
+import sqlite3
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 class MedicareSupplementRateDB:
     def __init__(self, db_path: str, log_operations: bool = True, log_file: str = None):
-        self.conn = libsql.connect(db_path)
+        self.conn = sqlite3.connect(db_path)
         self.cr = csg(Config.API_KEY)
         if log_operations:
             log_filename = log_file if log_file else f"db_operations_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -76,6 +76,14 @@ class MedicareSupplementRateDB:
                 state TEXT,
                 group_zip INTEGER,
                 PRIMARY KEY (naic, state)
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS carrier_selection (
+                naic TEXT PRIMARY KEY,
+                company_name TEXT,
+                selected INTEGER DEFAULT 1,
+                discount_category TEXT
             )
         ''')
         self.conn.commit()

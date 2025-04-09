@@ -8,7 +8,7 @@ from aiolimiter import AsyncLimiter
 from zips import zipHolder
 import json
 import os
-import libsql_experimental as libsql
+import sqlite3
 import traceback
 from collections import defaultdict
 from pprint import pprint
@@ -16,8 +16,7 @@ from pprint import pprint
 async def sync_turso():
     url = os.getenv("NEW_QUOTE_DB_URL")
     key = os.getenv("NEW_QUOTE_DB_KEY")
-    conn = libsql.connect("replica.db", sync_url=url, auth_token=key)
-    conn.sync()
+    conn = sqlite3.connect("replica.db")
     return conn
 
 def validate_effective_date(date_str: str) -> datetime:
