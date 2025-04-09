@@ -10,6 +10,7 @@ dependencies = [
     "asyncio>=3.4.3",
     "babel>=2.16.0",
     "fastapi>=0.115.6",
+    "gdown>=5.2.0",
     "httpx>=0.28.1",
     "pydantic>=2.10.3",
     "python-dotenv>=1.0.1",
