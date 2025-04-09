@@ -1,2 +1,12 @@
 logs/
 *.log
+
+# Large database files
+msr_target.db
+msr_target_copy.db
+replica.db
+new_db.db
+app/msr.db
+
+# Keep smaller database files (if needed)
+# !small_sample.db
