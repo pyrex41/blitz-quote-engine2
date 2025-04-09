@@ -39,10 +39,6 @@ async def process_state_naics(db, state: str, effective_date: str, dic: dict) ->
     selected_naics = set([x['naic'] for x in db.get_selected_carriers()])
     ls = available_naics.intersection(selected_naics)
     dic[state] = ls
- 
-
-    
-
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Process Medicare Supplement Rate data for states.")
@@ -65,14 +61,30 @@ async def main() -> None:
     effective_dates = get_effective_dates(args.months)
     state_date_naic_tuples = []
 
+    # Load state list
+    state_list = [
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+        "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+        "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+        "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+        "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+        "DC"
+    ]
 
+    # Load changes from input file
     import json
     with open(args.file, 'r') as f:
         data = json.load(f)
 
-    states_to_process_set = set()
-        
-    # Extract specific state/date combinations where changes were detected
+    # Get available NAICs for each state
+    state_available = {}
+    state_available_tasks = []
+    for state in state_list:
+        for effective_date in effective_dates:
+            state_available_tasks.append(process_state_naics(db, state, effective_date, state_available))
+    await asyncio.gather(*state_available_tasks)
+
+    # Extract state/date combinations where changes were detected
     for effective_date, date_entry in data.items():
         assert effective_date == date_entry['effective_date']
         for state, dic in date_entry['changes'].items():
@@ -80,14 +92,11 @@ async def main() -> None:
                 if changed:
                     state_date_naic_tuples.append((state, effective_date, naic))
 
-    states_to_process = list(states_to_process_set)
     if state_date_naic_tuples:
         logging.info(f"Found state/date pairs to process: {state_date_naic_tuples}")
     else:
         logging.info("No changes detected in input file")
         return
-   
-
 
     # Sort pairs by date to ensure proper processing order
     state_date_naic_tuples.sort(key=lambda x: x[1])
@@ -102,25 +111,21 @@ async def main() -> None:
             print(f"    - {state} {naic}")
         return
 
-
-    # Get available naics for each state
-
-    # get state
+    # Process state map tasks
     tasks = []
     for state, effective_date, naic in state_date_naic_tuples:
         tasks.append(db.set_state_map_naic(naic, state))
-    logging.info(f"Processing {len(tasks)} tasks")
+    logging.info(f"Processing {len(tasks)} state map tasks")
     await asyncio.gather(*tasks)
 
+    # Process rate tasks
     rate_tasks = []
     for state, effective_date, naic in state_date_naic_tuples:
         rate_tasks.extend(db.get_rate_tasks(state, naic, effective_date))
 
     logging.info(f"Processing {len(rate_tasks)} rate tasks")
-    return await asyncio.gather(*rate_tasks)     
-
-
-
+    results = await asyncio.gather(*rate_tasks)
+    logging.info(f"Completed {len(results)} rate tasks")
 
 if __name__ == "__main__":
     asyncio.run(main()) 
