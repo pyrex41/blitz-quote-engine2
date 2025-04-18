@@ -1,0 +1,143 @@
+Okay, fantastic! Embracing Common Lisp for its unique strengths is a rewarding path. Let's structure this with prompts designed to push you towards idiomatic Lisp solutions using CLOS and macros, focusing on clarity, robustness, and abstracting complexity.
+
+We'll build this iteratively. Treat these as guiding points for development, best done within an interactive REPL environment (like SLIME or SLY).
+
+Phase 1: Foundation - Data Models & Basic Structure
+
+Prompt 1: Package Definition
+
+"Define distinct Common Lisp packages for core logic, data models, API interactions, database interactions, conditions/restarts, and utilities. Use local nicknames for clarity (e.g., #:models, #:api, #:db). What standard libraries (e.g., Alexandria) should be included?"
+
+Lispy Goal: Namespace management, avoiding symbol conflicts, modularity.
+
+Prompt 2: Core Data Models (CLOS)
+
+"Define CLOS classes (defclass) for carrier, region, and rate within the models package. Identify necessary slots (fields) like naic, name, state, zip, age, gender, plan, tobacco, rate, effective-date, region-id, region-type, locations. Specify types (:type) and initargs (:initarg) / accessors (:accessor or :reader/:writer) for each slot."
+
+Lispy Goal: Use CLOS as the foundation for structured data representation. Accessors provide a uniform interface.
+
+Prompt 3: Configuration Handling
+
+"Design how configuration (API keys, database path, retry settings, selected carriers/states) will be managed. Should these be defparameters, environment variables accessed via a function, or loaded from a config file? Define functions or variables to access configuration values robustly."
+
+Lispy Goal: Centralized and accessible configuration.
+
+Phase 2: API Interaction - Abstraction & Robustness
+
+Prompt 4: Basic API Request Function
+
+"Implement a core function api-request that takes an endpoint, HTTP method, and parameters. Use a library like Drakma or Dexador. How will it handle adding the base URL and necessary headers (like authentication tokens)?"
+
+Lispy Goal: Encapsulate the raw HTTP interaction.
+
+Prompt 5: API Error Conditions
+
+"Define a hierarchy of conditions (using define-condition) specific to API interactions, inheriting from a base api-error. Include conditions for timeouts (api-timeout), rate limits (api-rate-limit), authentication errors (api-auth-error), bad requests (api-bad-request), server errors (api-server-error), and response parsing errors (api-parse-error). Slot relevant information like URL, params, status code, and response body into these conditions."
+
+Lispy Goal: Precisely signal what went wrong, enabling targeted handling later.
+
+Prompt 6: Macro for API Retries & Basic Error Handling
+
+"Create a macro with-api-handling that wraps an API call. It should:
+
+Handle common errors signaled by api-request (like 5xx server errors, timeouts, rate limits) by invoking a retry-operation restart.
+
+Implement exponential backoff for retries.
+
+Define the retry-operation restart within its scope.
+
+Allow specifying the number of retries.
+
+Re-signal unhandled or persistent errors."
+
+Lispy Goal: Abstract the repetitive try/retry/backoff logic using a macro, keeping the call sites clean. Define restarts close to where they can be meaningfully implemented.
+
+Prompt 7: Enhancing api-request with with-api-handling
+
+"Refactor api-request (or create a new function calling the basic one) to use the with-api-handling macro. Ensure it correctly signals the specific api-* conditions based on HTTP status codes or underlying library errors before the macro's handler catches them."
+
+Lispy Goal: Combine low-level error signaling with higher-level retry abstraction.
+
+Prompt 8: Macro for Specific API Endpoints
+
+"Define a macro define-api-endpoint that simplifies defining functions for specific API calls (e.g., fetch-quotes, fetch-auth-token). This macro should take the endpoint name, required parameters, the target endpoint string, and the HTTP method. It should generate a function that validates parameters, calls the robust api-request function, and potentially parses the expected response structure."
+
+Lispy Goal: Reduce boilerplate for defining multiple API call functions. Create a mini-DSL for your API interactions.
+
+Phase 3: Data Processing & Database - Leveraging CLOS & Abstraction
+
+Prompt 9: JSON Parsing to CLOS Objects (Generic Functions)
+
+"Define a generic function parse-response (defgeneric) specialized on a parameter indicating the type of expected data (e.g., :carrier-list, :rate-quote). Implement methods (defmethod) that take the raw JSON data (parsed by Jonathan or cl-json) and the type symbol, and return instances of the appropriate CLOS classes (carrier, rate, etc.), mapping JSON fields to slots."
+
+Lispy Goal: Use generic functions to dispatch parsing logic based on expected data type, promoting extensibility.
+
+Prompt 10: Database Connection Macro
+
+"Implement a macro with-database-connection that takes a connection variable name and the database configuration. It should establish a connection (using cl-dbi or specific bindings for SQLite/DuckDB), bind it to the variable, execute the body, and ensure disconnection (dbi:disconnect) using unwind-protect."
+
+Lispy Goal: Ensure database resources are managed correctly and abstract connection/disconnection logic.
+
+Prompt 11: Database Error Conditions
+
+"Define conditions for database operations, inheriting from database-error. Include database-connection-error and database-query-error (storing the query and params)."
+
+Lispy Goal: Separate DB errors from API errors for distinct handling.
+
+Prompt 12: Saving CLOS Objects (Generic Functions)
+
+"Define a generic function save-object (defgeneric) that takes a database connection and a model object (our CLOS instances). Implement methods specialized on the class of the object (carrier, region, rate). These methods will construct and execute the appropriate SQL INSERT/UPDATE/REPLACE statements using the object's slot values. Handle potential dbi:<dbi-error>s and signal your own database-query-error."
+
+Lispy Goal: Use CLOS method specialization to handle saving different object types polymorphically. Keep saving logic tied to the object's definition.
+
+Prompt 13: Loading Data (Generic Functions/Macros)
+
+"Design how data will be loaded. Could be a load-object generic function specialized by class and query parameters, or perhaps macros like select-carriers that generate the query and instantiate objects from the results."
+
+Lispy Goal: Abstract data retrieval, potentially leveraging CLOS or macros for clean interfaces.
+
+Phase 4: Core Logic & Workflow - Conditions, Restarts, Concurrency
+
+Prompt 14: Region Mapping Logic with Restarts
+
+"Implement the logic to determine rate regions for a carrier/state. This likely involves sample API calls. If a call fails, what restarts should be available? Examples: skip-region-determination, retry-sample-fetch, assume-single-region. Use handler-bind and restart-case to manage this flow robustly."
+
+Lispy Goal: Use conditions and restarts to handle failures gracefully during a multi-step discovery process, offering contextual recovery options.
+
+Prompt 15: Rate Fetching Logic (Handlers & Restarts)
+
+"Implement the function fetch-all-rates-for-carrier (for a given state/effective date). It will iterate through demographics and regions, calling the API. Wrap calls in handler-bind. If an API call for a specific demographic/region fails irrecoverably (after retries from with-api-handling):
+
+What condition should be signaled? (e.g., rate-fetch-failed)
+
+What restarts should be available at this level? (skip-demographic, skip-region, provide-default-rate)"
+
+Lispy Goal: Handle errors at the appropriate granularity, allowing the process to continue partially if desired via restarts.
+
+Prompt 16: Top-Level Workflow with Handlers
+
+"Structure the main processing loop (e.g., process-state or process-all). Use handler-bind at this top level to catch potentially uncaught errors (like persistent API auth failures, database connection issues). Decide on the overall recovery strategy here. Should it log the error and skip-current-item (carrier/state)? Should it abort-process entirely? Invoke restarts established lower down."
+
+Lispy Goal: Separate high-level error policy (skip vs. abort) from low-level error detection and retry logic.
+
+Prompt 17: Concurrency
+
+"Integrate lparallel to fetch rates for different regions or carriers concurrently. How will condition handling work across threads? (lparallel has mechanisms for this – investigate lp:task-handler-bind). Ensure database connections are handled correctly (either thread-local connections or a connection pool)."
+
+Lispy Goal: Use parallelism efficiently while maintaining robust error handling.
+
+Phase 5: Refinement & Idiomatic Style
+
+Prompt 18: Macro for Pipeline/Workflow Steps
+
+"Can the overall process (validate -> fetch regions -> fetch rates -> store rates) be represented more declaratively? Consider a macro define-processing-pipeline that defines a sequence of steps (functions), automatically passing data between them and providing consistent error handling wrappers for each step."
+
+Lispy Goal: Create a higher-level abstraction for the workflow itself.
+
+Prompt 19: Review for Conciseness & Abstraction
+
+"Review the implemented code. Where is there repetition? Can common patterns be extracted into new functions or macros? Can generic functions further reduce conditional logic?"
+
+Lispy Goal: Continuously refactor towards cleaner, more abstract, and more declarative code leveraging Lisp's strengths.
+
+Remember to leverage your interactive environment constantly. Test functions, signal conditions, inspect objects, and invoke restarts directly from the REPL/debugger to understand the flow and build confidence in your error handling. Good luck!

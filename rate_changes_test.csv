@@ -1,0 +1,5 @@
+State,Carrier Name,NAIC,Region,ZIP Code,Current Rate,Current Effective Date,Future Rate,Future Effective Date,Change Amount,Change Percent
+MO,Allstate Health Solutions,82538,28cbb57e-5872-4796-b2f1-89d0e524f79a,63701,$246.81,2024-06-01T00:00:00,$295.94,2025-06-01T00:00:00,$49.13,19.91%
+MO,Allstate Health Solutions,82538,3d7f8544-8832-4ec6-94ae-918903509d29,63401,$268.85,2024-06-01T00:00:00,$322.36,2025-06-01T00:00:00,$53.51,19.90%
+MO,Allstate Health Solutions,82538,81e1e18a-bdb4-4471-aff5-94eb9ffc27a4,63601,$253.43,2024-06-01T00:00:00,$303.86,2025-06-01T00:00:00,$50.43,19.90%
+MO,Allstate Health Solutions,82538,dab82a9c-3972-418d-83fb-44c335eb7169,63005,$286.48,2024-06-01T00:00:00,$343.50,2025-06-01T00:00:00,$57.02,19.90%

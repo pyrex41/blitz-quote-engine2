@@ -96,6 +96,26 @@ class AsyncCSGRequest:
     self.api_key = api_key
     self.token = None  # Will be set asynchronously in an init method
     self.request_count = 0
+    # Create shared client limits
+    self.limits = httpx.Limits(max_keepalive_connections=50, max_connections=100)
+    self._client = None  # Will be initialized later
+    # Create error tracking for circuit breaker
+    self.consecutive_errors = 0
+    self.error_threshold = 10
+    self.backoff_time = 1
+    self.max_backoff = 30
+
+  async def get_client(self):
+    """Get a shared client with connection pooling to avoid too many open files."""
+    if self._client is None:
+      self._client = httpx.AsyncClient(timeout=TIMEOUT, limits=self.limits)
+    return self._client
+
+  async def close_client(self):
+    """Close the shared client."""
+    if self._client is not None:
+      await self._client.aclose()
+      self._client = None
 
   async def async_init(self):
     try:
@@ -120,8 +140,8 @@ class AsyncCSGRequest:
         f.write(f"[token-config]\ntoken={self.token}")
 
   async def fetch_token(self):
-    async with httpx.AsyncClient() as client:
-      resp = await client.get(self.token_uri)
+    client = await self.get_client()
+    resp = await client.get(self.token_uri)
     if resp.status_code == 200:
       token = resp.json().get("csg_token")
       logging.info(f"Fetched_token is {token}")
@@ -133,13 +153,12 @@ class AsyncCSGRequest:
   async def fetch_token_fallback(self):
     ep = 'auth.json'
     values = {'api_key': self.api_key}
-    async with httpx.AsyncClient() as client:
-      resp = await client.post(self.uri + ep, json=values)
-      resp.raise_for_status(
-      )  # Will raise an exception for 4XX and 5XX status codes
-      token = resp.json()['token']
-      logging.warn(f"Reset token via csg: {token}")
-      return token
+    client = await self.get_client()
+    resp = await client.post(self.uri + ep, json=values)
+    resp.raise_for_status()  # Will raise an exception for 4XX and 5XX status codes
+    token = resp.json()['token']
+    logging.warn(f"Reset token via csg: {token}")
+    return token
 
   def GET_headers(self):
     return {'Content-Type': 'application/json', 'x-api-token': self.token}
@@ -148,36 +167,54 @@ class AsyncCSGRequest:
     print('Resetting token asynchronously')
     await self.set_token(token=None)
 
-  async def get(self, uri, params, full_response=False):
-    async with httpx.AsyncClient(timeout=10.0) as client:
-      resp = await client.get(uri, params=params, headers=self.GET_headers())
-      if resp.status_code == 403:
-        await self.reset_token()
-        resp = await client.get(uri, params=params, headers=self.GET_headers())
-      resp.raise_for_status(
-      )  # Will raise an exception for 4XX and 5XX status codes
-      self.request_count += 1
-      return resp.json() if not full_response else resp
-
-  async def get(self, uri, params, retry=3):
-    for _ in range(retry):  # Retry up to 3 times
+  async def get(self, uri, params, retry=5):
+    """Get with improved error handling and exponential backoff."""
+    for attempt in range(retry):
       try:
-        async with httpx.AsyncClient(
-            timeout=TIMEOUT) as client:  # Increase timeout
-          resp = await client.get(uri,
-                                  params=params,
-                                  headers=self.GET_headers())
-          if resp.status_code == 403:
-            await self.reset_token()
-            resp = await client.get(uri,
-                                    params=params,
-                                    headers=self.GET_headers())
-          resp.raise_for_status(
-          )  # Will raise an exception for 4XX and 5XX status codes
-          self.request_count += 1
-          return resp.json()
-      except ReadTimeout:
-        print("Request timed out. Retrying...")
+        # Apply exponential backoff if this is a retry
+        if attempt > 0:
+          backoff = min(self.backoff_time * (2 ** (attempt - 1)), self.max_backoff)
+          logging.warning(f"Retry {attempt}/{retry} after {backoff}s backoff")
+          await asyncio.sleep(backoff)
+          
+        client = await self.get_client()
+        resp = await client.get(uri, params=params, headers=self.GET_headers())
+        
+        if resp.status_code == 403:
+          await self.reset_token()
+          resp = await client.get(uri, params=params, headers=self.GET_headers())
+        elif resp.status_code in [429, 500, 502, 503, 504]:
+          # Rate limited or server error - retry with backoff
+          logging.warning(f"Received status code {resp.status_code}, retrying...")
+          continue
+          
+        resp.raise_for_status()
+        
+        # Success - reset error counters
+        self.consecutive_errors = 0
+        self.backoff_time = 1
+        
+        self.request_count += 1
+        return resp.json()
+      except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ReadError) as e:
+        # Connection/timeout errors may indicate we're opening too many connections
+        self.consecutive_errors += 1
+        logging.warning(f"Connection error ({attempt+1}/{retry}): {str(e)}")
+        
+        # If we keep getting errors, close and recreate the client
+        if self.consecutive_errors >= self.error_threshold:
+          logging.warning("Too many consecutive errors, recreating client")
+          await self.close_client()
+          self.consecutive_errors = 0
+          self.backoff_time = min(self.backoff_time * 2, self.max_backoff)
+      except Exception as e:
+        logging.error(f"API request error ({attempt+1}/{retry}): {str(e)}")
+        self.consecutive_errors += 1
+        
+        # If this is the last attempt, re-raise
+        if attempt == retry - 1:
+          raise
+    
     raise Exception(f"Request failed after {retry} attempts")
 
   async def _fetch_pdp(self, zip5):
@@ -693,9 +730,6 @@ class AsyncCSGRequest:
             zz.append(z)
             sc_dict[counties[0]] = zz
 
-    
-
-
     # Shuffle the single_county_zips list
     single_county_zips = list(single_county_zips)
     random.shuffle(single_county_zips)
@@ -715,6 +749,7 @@ class AsyncCSGRequest:
 
     lookup_list = []
 
+    # For first API call, use a representative zip code to identify the carrier's county structure
     params = {
       "zip5": single_county_zips[0],
       "age": 65,
@@ -748,9 +783,6 @@ class AsyncCSGRequest:
             county_base_raw.add('ST. JOHNS')
 
       county_base = county_base_raw - city_items
-      
-
-      
       county_base = process_st(county_base_raw)
 
       lookup_list.append(county_base)
@@ -758,7 +790,6 @@ class AsyncCSGRequest:
       logging.info(f"{len(processed_counties)} counties processed for {naic}")
 
 
-    
       # workaround for HUMANA LA
       if state == 'LA' and naic in ['73288', '60984', '60052']:
         group1 = set([
@@ -900,18 +931,21 @@ class AsyncCSGRequest:
         if county not in processed_counties and county not in city_items:
             logging.info(f"Processing county: {county}")
             try:
-                # Find a zip code for this county
-                county_zip = next(z for z in sc_dict.get(county, []))
-                logging.info(f"county_zip: {county_zip}")
-                params['zip5'] = county_zip
+                # Find a zip code in this county to use for the API call
+                # We need a zip code for the API call, but we'll explicitly include the county parameter
+                # to ensure we're getting rates for the specific county
+                try:
+                    county_zip = next(z for z in sc_dict.get(county, []))
+                except (StopIteration, TypeError):
+                    # If no direct county-to-zip mapping, find any zip in this county
+                    county_zip = zips.lookup_zip(county)
+                    if not county_zip:
+                        logging.warn(f"No zip code found for county: {county}")
+                        continue
 
-                if county_zip is None:
-                  logging.warn(f"No 1:1 zip code found for county: {county}")
-                  zip_to_use = zips.lookup_zip(county)
-                  params['zip5'] = zip_to_use
-                  params['county'] = county
-                elif 'county' in params:
-                  params.pop('county')
+                # Use both zip5 and county parameters to ensure correct county rates
+                params['zip5'] = county_zip
+                params['county'] = county
                 
                 rr = await self.fetch_quote(**params)
                 
@@ -958,9 +992,9 @@ class AsyncCSGRequest:
                             logging.warn(f"{naic} has {zero_count} zero regions -- exiting")
                             return []
                 else:
-                    logging.warn(f"No results for {county_zip} - {county}")
+                    logging.warn(f"No results for county: {county} (using zip: {county_zip})")
             except Exception as ee:
-                logging.warn(f"Error processing {county}: {ee}")
+                logging.warn(f"Error processing {county}: {str(ee)}")
 
     logging.info(f"{naic} has {len(lookup_list)} county regions")
 

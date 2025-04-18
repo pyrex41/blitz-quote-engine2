@@ -1,0 +1,28 @@
+DATA FEED FIELD DESCRIPTIONS,,,,,,,
+,,,,,,,
+Rates Table,,,Underwriting Conditions Table,,,Zip Codes Table,
+,,,,,,,
+Field,Description,,Field,Description,,Field,Description
+,,,,,,,
+Company,Official company name,,Company,"Official company name (link to ""Company"" field in ""Rates"" table)",,ZIP LOOKUP CODE,"The code used to pull specific zip codes for an area in the rates table - this field should be linked to the ""Zip_Lookup_Code"" field in that table to pull specific zip codes, counties, etc."
+Company_Old,Unofficial name needed for certain queries we use - CAN BE IGNORED,,Company_Old,Unofficial name needed for certain queries we use - CAN BE IGNORED,,STATE,State
+NAIC,NAIC number,,State,"State (link to ""State"" field in ""Rates"" table)",,COUNTY,County
+Plan,"Medicare Supplement plan (A, B, C, etc.)",,Category,Category we have applied to this condition,,CITY,City
+State,State,,Condition,Condition,,ZIP-3,3-digit zip code
+Area,"Region code for which the specific rates listed apply - areas are defined as ""1"" for the lowest set of rates in a state, and each subsquent area represents the next highest set of rates for that state",,Criteria,Criteria for declination for this condition,,ZIP-5,5-digit zip code
+Zip_Lookup_Code,"The code used to pull specific zip codes for this area - this field should be linked to the ""ZIP LOOKUP CODE"" field in the zip code table to pull specific zip codes, counties, etc.",,,,,,
+Gender,Gender,,,,,,
+T/NT,Tobacco or non-tobacco,,,,,,
+Couple_Fac,Couple factor - currently empty for all companies - CAN BE IGNORED,,,,,,
+Eff_Date,Effective date of the rates,,,,,,
+Rate_Type,"Type of rates (issue age, attained age, or community rated)",,,,,,
+Age_For_Sorting,"Duplicate of the ""Age"" field for the most part except it is entirely numeric (""<=64"" becomes ""64"") - it can be ignored unless a numeric age field is needed",,,,,,
+Lowest_Rate?,"""Y"" if this set of rates is the lowest in this state (i.e. area 1) - otherwise, it will be ""N""",,,,,,
+Highest_Rate?,"""Y"" if this set of rates is the highest in this state (if the company does not do area rating for this state, this will be ""Y"" for area 1) - otherwise, it will be ""N""",,,,,,
+Age,Age,,,,,,
+Monthly_Rate,Monthly rate,,,,,,
+Quarterly_Rate,Quarterly rate,,,,,,
+Semi-Annual_Rate,Semi-annual rate,,,,,,
+Annual_Rate,Annual rate,,,,,,
+Policy Fee,Policy fee,,,,,,
+Household Discount,Household discount,,,,,,

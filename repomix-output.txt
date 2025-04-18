@@ -36,7 +36,7 @@ Notes:
 ------
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: **/*.py
+- Only files matching these patterns are included: build_duckdb.py, async_csg.py, filter_utils.py, spot_check.py
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 
@@ -46,742 +46,14 @@ Additional Info:
 ================================================================
 Directory Structure
 ================================================================
-app/
-  routers/
-    quotes.py
-  database.py
-  main.py
-  models.py
-add_table.py
 async_csg.py
-build_db_new.py
-check_script.py
-config.py
-copy_data_forward.py
-date_utils.py
-db_operations_log.py
+build_duckdb.py
 filter_utils.py
-hello.py
-map_file.py
-map_sequential.py
-normalize_county.py
-tt.py
-write-test.py
-zips.py
+spot_check.py
 
 ================================================================
 Files
 ================================================================
-
-================
-File: app/routers/quotes.py
-================
-from fastapi import APIRouter, Depends, HTTPException, Query, Security
-from sqlalchemy import or_, text
-from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
-from app.database import get_db
-from app.models import GroupMapping, CompanyNames, CarrierSelection
-import json
-from zips import zipHolder
-import os
-from fastapi.security.api_key import APIKeyHeader
-from starlette.status import HTTP_403_FORBIDDEN
-import dotenv
-from async_csg import AsyncCSGRequest
-from config import Config
-import asyncio
-from filter_utils import filter_quote_fields
-from datetime import datetime, timedelta
-from filter_utils import Quote, QuoteInt, QuoteResponse, use_int, QuoteComparison
-import time
-from statistics import mean, median
-from normalize_county import normalize_county_name
-from thefuzz import process
-from pprint import pprint
-dotenv.load_dotenv()
-
-router = APIRouter()
-
-# Initialize CSG client for fallback
-csg_client = AsyncCSGRequest(Config.API_KEY)
-zip_helper = zipHolder("static/uszips.csv")
-
-
-
-VALID_STATE_CODES = {
-    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
-    'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
-    'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
-    'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
-    'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
-    'DC'
-}
-
-API_KEY_NAME = "X-API-Key"
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
-
-# Check if we're running on Replit
-IS_REPLIT = os.getenv('REPLIT', 'False').lower() == 'true'
-
-API_KEYS = set(['yVujgWOYsLOJxGaicK69TPYVKgwMmqgb'])
-
-def get_state_specific_plan(state: str, default_plan: Optional[str] = None) -> Optional[str]:
-    """Get state-specific plan override if applicable"""
-    if default_plan and default_plan.upper() in ['G', 'F']:
-        state_plan_mapping = {
-            'MN': 'MN_EXTB',
-            'WI': 'WI_HDED', 
-            'MA': 'MA_SUPP1'
-        }
-    else:
-        state_plan_mapping = {
-            'MN': 'MN_BASIC',
-            'WI': 'WI_BASE',
-            'MA': 'MA_CORE'
-        }
-    return state_plan_mapping.get(state, default_plan)
-
-def get_effective_date() -> str:
-    """Get the effective date for quotes (first of next month)"""
-    return (datetime.now() + timedelta(days=32)).replace(day=1).strftime('%Y-%m-%d')
-
-def validate_inputs(zip_code: str, state: str, county: Optional[str], gender: Optional[str]) -> tuple:
-    """Validate input parameters and return processed values"""
-    if not zip_code or not state:
-        raise HTTPException(status_code=400, detail="State and zip_code must be provided")
-
-    if len(state) != 2 or state.upper() not in VALID_STATE_CODES:
-        raise HTTPException(status_code=400, detail="Invalid state code")
-    
-    if not zip_code.isdigit() or len(zip_code) != 5:
-        raise HTTPException(status_code=400, detail="Invalid ZIP code format")
-
-    # Validate zip code and get county
-    valid_counties = zip_helper.lookup_county(zip_code)
-    if not valid_counties or valid_counties == ['None']:
-        raise HTTPException(status_code=400, detail="Invalid ZIP code")
-
-    # Process county with fuzzy matching
-    processed_county = None
-    if county:
-        # First try exact match with normalized name
-        normalized_county = normalize_county_name(county)
-        if normalized_county in valid_counties:
-            processed_county = normalized_county
-        else:
-            # Try fuzzy matching if exact match fails
-            best_match = process.extractOne(normalized_county, valid_counties)
-            if best_match and best_match[1] >= 80:  # Minimum similarity score of 80%
-                processed_county = best_match[0]
-            else:
-                processed_county = valid_counties[0]  # Fallback to first valid county
-    else:
-        processed_county = valid_counties[0]
-
-    # Process gender
-    processed_gender = None
-    if gender:
-        gender_upper = gender.upper()
-        if gender_upper not in ['M', 'F', 'MALE', 'FEMALE']:
-            raise HTTPException(status_code=400, detail="Gender must be 'M', 'F', 'male', or 'female'")
-        processed_gender = 'M' if gender_upper in ['M', 'MALE'] else 'F'
-
-    return zip_code, state.upper(), processed_county, processed_gender
-
-def calculate_rate_with_increases(base_rate: float, base_age: int, target_age: int, 
-                                age_increases: List[float]) -> float:
-    """Calculate rate for a specific age including age-based increases"""
-    age_diff = target_age - base_age
-    if age_diff < 0:
-        return 0.0
-        
-    rate_multiplier = 1.0
-    for i in range(age_diff):
-        if i < len(age_increases):
-            rate_multiplier *= (1 + age_increases[i])
-            
-    return base_rate * rate_multiplier
-
-def process_filtered_quote(quote_data: Dict[str, Any], requested_ages: List[int]) -> List[Quote]:
-    """Process a raw quote into a list of Quote objects"""
-    quotes_list = []
-    base_rate = quote_data.get('rate', 0)
-    base_age = quote_data.get('age', 65)
-    age_increases = quote_data.get('age_increases', [])
-    discount_category = quote_data.get('discount_category', None)
-    for age in (requested_ages or [base_age]):
-        rate = calculate_rate_with_increases(base_rate, base_age, age, age_increases)
-        if rate <= 0:
-            continue
-            
-        # Calculate discount if available
-        try:
-            discount_mult = (1 - quote_data['discounts'][0].get('value'))
-        except:
-            discount_mult = 1
-        discount_rate = round(rate * discount_mult, 2)
-        
-        quotes_list.append(Quote(
-            age=age,
-            gender=quote_data['gender'],
-            plan=quote_data['plan'],
-            tobacco=quote_data['tobacco'],
-            rate=rate,
-            discount_rate=discount_rate,
-            discount_category=discount_category
-        ))
-        
-    return quotes_list
-
-def get_api_key(api_key_header: str = Security(api_key_header)):
-    """Validate API key"""
-    if not api_key_header:
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN, detail="API key is missing"
-        )
-    
-    if api_key_header not in API_KEYS:
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN, detail="Could not validate API key"
-        )
-    
-    return api_key_header
-
-
-async def fetch_quotes_from_csg(db: Session, zip_code: str, county: str, state: str, 
-                              age: List[int], tobacco: Optional[bool] = None, 
-                              gender: Optional[str] = None, plans: List[str] = None,
-                              naic: Optional[List[str]] = None,
-                              effective_date: Optional[str] = None,
-                              all_carriers: bool = False) -> List[QuoteResponse]:
-    """Fetch quotes directly from CSG API"""
-    try:
-        # Validate required parameters
-        if not age:
-            age = range(65, 100)
-
-        if tobacco is None:
-            tobaccoOptions = [True, False]
-        else: 
-            tobaccoOptions = [tobacco]
-
-        if not gender:
-            genderOptions = ['M', 'F']
-        else:
-            genderOptions = [gender]
-
-        # Ensure token is initialized
-        if not hasattr(csg_client, 'token') or not csg_client.token:
-            await csg_client.async_init()
-            await csg_client.fetch_token()
-            
-        # Double check token after initialization
-        if not csg_client.token:
-            raise HTTPException(status_code=500, detail="Failed to initialize CSG client token")
-        
-        effective_date_processed = effective_date or get_effective_date()
-
-        # Validate effective date format and value
-        if effective_date_processed:
-            try:
-                # Parse the effective date string
-                effective_date_obj = datetime.strptime(effective_date_processed, '%Y-%m-%d').date()
-                
-                # Check if effective date is not before today
-                today = datetime.now().date()
-                if effective_date_obj < today:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail="Effective date cannot be before today"
-                    )
-                                    
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid effective date format. Must be YYYY-MM-DD"
-                )
-            
-        queries = []
-
-
-        base_naic_list = get_naic_list(db, state)
-        print(f"base_naic_list: {base_naic_list}")
-
-        for tobacco in tobaccoOptions:
-            for gender in genderOptions:
-                for a in age:
-                    for plan in plans:
-                        query_data = {
-                            'zip5': zip_code,
-                            'county': county,
-                            'age': a,
-                            'tobacco': int(tobacco),
-                            'gender': gender,
-                            'plan': get_state_specific_plan(state, plan),
-                            'effective_date': effective_date_processed,
-                        }
-                        if all_carriers:
-                            pass
-                        elif naic:
-                            query_data['naic'] = naic
-                        else:
-                            query_data['naic'] = base_naic_list
-                        queries.append(query_data)
-
-        raw_tasks = [csg_client.fetch_quote(**query) for query in queries]
-        raw_quotes = await asyncio.gather(*raw_tasks)
-        raw_quotes_flattened = [item for sublist in raw_quotes for item in sublist]
-        filtered_quotes = filter_quote_fields((raw_quotes_flattened, None))
-        results = []
-        
-        for quote in filtered_quotes:
-                
-            # Skip if NAIC doesn't match the filter
-            if naic and quote.get('naic') not in naic:
-                continue
-                
-            quotes_list = process_filtered_quote(quote, age)
-            if quotes_list:
-                qr = QuoteResponse(
-                    naic=quote.get('naic'),
-                    group=-1,  # Default group for direct CSG queries
-                    company_name=quote.get('name'),
-                    quotes=list(map(use_int, quotes_list))
-                )
-                if qr.naic == '60380':
-                    qr.company_name = 'AFLAC'
-                results.append(qr)
-                
-        return results
-        
-    except Exception as e:
-        error_msg = f"Error fetching quotes from CSG: {str(e)}"
-        if hasattr(e, '__traceback__'):
-            import traceback
-            tb = ''.join(traceback.format_tb(e.__traceback__))
-            error_msg = f"{error_msg}\nTraceback:\n{tb}"
-        raise HTTPException(status_code=500, detail=error_msg)
-
-async def fetch_quotes_from_db(db: Session, state: str, zip_code: str, county: str,
-                             age: Optional[List[int]], tobacco: Optional[bool],
-                             gender: Optional[str], plan: Optional[str],
-                             naic: Optional[List[str]] = None,
-                             effective_date: Optional[str] = None) -> List[QuoteResponse]:
-    """Fetch quotes from the database"""
-    print(f"effective_date: {effective_date}")
-    query = db.query(GroupMapping, CompanyNames.name).outerjoin(
-        CompanyNames, GroupMapping.naic == CompanyNames.naic
-    ).filter(
-        GroupMapping.state == state,
-        or_(GroupMapping.location == zip_code, GroupMapping.location == county)
-    )
-    
-    if naic:
-        query = query.filter(GroupMapping.naic.in_(naic))
-        
-    group_mappings = query.all()
-
-    if not group_mappings:
-        return []
-
-    results = []
-    for mapping, company_name in group_mappings:
-        store_key = f"{state}:{mapping.naic}:{mapping.naic_group}"
-        
-        # Build pattern for the inner JSON keys
-        inner_key_parts = [
-            f"{age[0]}" if age else "%",              # age
-            f"{gender}" if gender else "%",            # gender
-            f"{plan}" if plan else "%",               # plan
-            f"{str(tobacco)}" if tobacco is not None else "%"  # tobacco
-        ]
-        inner_key_pattern = ":".join(inner_key_parts)
-        print(f"Looking up store_key: {store_key}, inner pattern: {inner_key_pattern}")
-        
-        sql_query = text("""
-            WITH json_data AS (
-                SELECT value as json_blob
-                FROM rate_store 
-                WHERE key = :store_key
-                AND effective_date = :effective_date
-            ),
-            matched_objects AS (
-                SELECT value as obj
-                FROM json_data, json_each(json_blob)
-                WHERE key LIKE :inner_key_pattern
-            )
-            SELECT json_group_array(obj) as result
-            FROM matched_objects;
-        """)
-
-        result = db.execute(sql_query, {
-            'store_key': store_key,
-            'inner_key_pattern': inner_key_pattern,
-            'effective_date': effective_date or get_effective_date()
-        }).scalar()
-
-        discount_category = db.execute(text("""
-            SELECT discount_category 
-            FROM carrier_selection 
-            WHERE naic = :naic
-        """), {'naic': mapping.naic}).scalar()
-
-
-
-        if result:
-            try:
-                # Parse the outer JSON array
-                quotes_array = json.loads(result)
-                # Parse each quote object
-                quotes = []
-                for quote_data in quotes_array:
-                    if isinstance(quote_data, str):
-                        # If the quote is still a string, parse it again
-                        quote_data = json.loads(quote_data)
-                    quotes.append(Quote(**quote_data))
-                    
-                if quotes:
-                    for quote in quotes:
-                        quote.discount_category = discount_category 
-                    qr = QuoteResponse(
-                        naic=mapping.naic,
-                        group=mapping.naic_group,
-                        company_name=company_name or "Unknown",
-                        quotes=list(map(use_int, quotes))
-                    )
-                    if qr.naic == '60380':
-                        qr.company_name = 'AFLAC'
-                    results.append(qr)
-            except json.JSONDecodeError as e:
-                print(f"Error parsing JSON: {e}")
-                print(f"Raw result: {result}")
-            except Exception as e:
-                print(f"Error processing quotes: {e}")
-                print(f"Raw result: {result}")
-
-    return results
-
-
-@router.get("/quotes/", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
-async def get_quotes(
-    zip_code: str,
-    state: str,
-    age: int,
-    tobacco: bool,
-    gender: str,
-    plans: List[str] = Query(...),
-    county: Optional[str] = None,
-    naic: Optional[List[str]] = Query(None),
-    effective_date: Optional[str] = None,
-    carriers: Optional[str] = Query("supported", regex="^(all|supported)$"),
-    db: Session = Depends(get_db),
-):
-    """Get quotes from database with CSG fallback"""
-    # Validate and process inputs
-    zip_code, state, county, gender = validate_inputs(zip_code, state, county, gender)
-
-    all_carriers = carriers == "all"
-
-    default_effective_date = get_effective_date()
-    effective_date_processed = effective_date or default_effective_date
-    print(f"effective_date_processed: {effective_date_processed}")
-
-    try:
-        if all_carriers:    
-            return await fetch_quotes_from_csg(db, zip_code, county, state, [age], tobacco, gender, plans, [], effective_date_processed, all_carriers=True)
-        else:
-            # Try database first
-            results = []
-            print(f"Fetching quotes from database for {len(plans)} plans")
-            plans_to_fetch = []
-            naics_to_fetch = {}
-            for plan in plans:
-                print(f"Fetching quotes for plan {plan}")
-                db_results = await fetch_quotes_from_db(
-                    db, state, zip_code, county, [age], tobacco, gender, plan, naic, effective_date_processed
-                )
-                if db_results:
-                    print(f"Found {len(db_results)} quotes for plan {plan}")
-                    results.extend(db_results)
-                    naicFilt = naic if naic else get_naic_list(db, state)
-                    for n in naicFilt:
-                        if n not in [q.naic for q in results]:
-                            d = naics_to_fetch.get(plan, [])
-                            d.append(n)
-                            naics_to_fetch[plan] = d
-                else:
-                    print(f"No quotes found for plan {plan} in database")
-                    plans_to_fetch.append(plan)
-
-            # Fetch missing quotes from CSG
-            tasks = []
-            if plans_to_fetch:
-                print(f"Fetching quotes from CSG for {len(plans_to_fetch)} plans")
-                task = fetch_quotes_from_csg(
-                    db, zip_code, county, state, [age], tobacco, gender, plans_to_fetch, naic, effective_date_processed, all_carriers=all_carriers
-                )
-                tasks.append(task)
-            if naics_to_fetch:
-                print(f"Fetching quotes from CSG for {len(naics_to_fetch)} plans with missing NAICs")
-                for plan, naics in naics_to_fetch.items():
-                    print(f"Fetching quotes for plan {plan} with NAICs: {naics}")
-                    task = fetch_quotes_from_csg(
-                        db, zip_code, county, state, [age], tobacco, gender, [plan], naics, effective_date_processed, all_carriers=True
-                    )
-                    tasks.append(task)
-
-            # Gather all CSG results and flatten properly
-            if tasks:
-                print(f"Gathering {len(tasks)} CSG tasks")
-                csg_results = await asyncio.gather(*tasks)
-                print(f"Received {len(csg_results)} CSG result lists")
-                pprint(csg_results)
-                for result_list in csg_results:
-                    if result_list:  # Check if the result list is not empty
-                        print(f"Adding {len(result_list)} quotes from CSG result list")
-                        results.extend(result_list)
-                    else:
-                        print("Empty CSG result list, skipping")
-
-            sorted_results = sorted(results, key=lambda x: x.naic or '')
-            print(f"Sorted results: {sorted_results}")
-            return sorted_results
-
-    except Exception as e:
-        # Log the error and fall back to CSG
-        print(f"Database query failed: {str(e)}")
-        return await fetch_quotes_from_csg(
-            db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date_processed, all_carriers=all_carriers
-        )
-    
-def get_naic_list(db: Session, state: str) -> List[str]:
-    res = db.query(GroupMapping.naic).distinct()\
-        .join(CarrierSelection, GroupMapping.naic == CarrierSelection.naic)\
-        .filter(GroupMapping.state == state)\
-        .filter(CarrierSelection.selected == 1)\
-        .all()
-    return [r[0] for r in res]
-
-
-@router.get("/quotes/csg", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
-async def get_quotes_from_csg(
-    zip_code: str,
-    state: str,
-    age: int,
-    tobacco: bool,
-    gender: str,
-    plans: List[str] = Query(...),
-    county: Optional[str] = None,
-    naic: Optional[List[str]] = Query(None),
-    effective_date: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    """Get quotes directly from CSG API for testing"""
-    # Validate and process inputs
-    zip_code, state, county, gender = validate_inputs(zip_code, state, county, gender)
-    
-    # Ensure token is initialized
-    if not hasattr(csg_client, 'token') or not csg_client.token:
-        await csg_client.async_init()
-        await csg_client.fetch_token()
-        
-    # Double check token after initialization
-    if not csg_client.token:
-        raise HTTPException(status_code=500, detail="Failed to initialize CSG client token")
-    
-    # Fetch quotes from CSG (pass age as a single-item list for compatibility)
-    return await fetch_quotes_from_csg(
-        db, zip_code, county, state, [age], tobacco, gender, plans, naic, effective_date, all_carriers=False
-    )
-
-
-class QuoteRequest(BaseModel):
-    zip_code: str
-    state: str
-    age: int
-    tobacco: bool
-    gender: str
-    plans: List[str]
-    county: Optional[str] = None
-    naic: Optional[List[str]] = None
-    effective_date: Optional[str] = None
-    carriers: Optional[str] = Query("supported", regex="^(all|supported)$")
-@router.post("/quotes/", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
-async def post_quotes(
-    request: QuoteRequest,
-    db: Session = Depends(get_db),
-):
-    """Get quotes from database with CSG fallback (POST version)"""
-    return await get_quotes(
-        zip_code=request.zip_code,
-        state=request.state,
-        age=request.age,
-        tobacco=request.tobacco,
-        gender=request.gender,
-        plans=request.plans,
-        county=request.county,
-        naic=request.naic,
-        effective_date=request.effective_date,
-        carriers=request.carriers,
-        db=db
-    )
-
-================
-File: app/database.py
-================
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
-import os
-#import libsql_experimental as libsql
-
-load_dotenv()
-
-TURSO_DB_URL = os.getenv("NEW_QUOTE_DB_URL")
-TURSO_DB_KEY = os.getenv("NEW_QUOTE_DB_KEY")
-
-dbUrl = f"sqlite+{TURSO_DB_URL}/?authToken={TURSO_DB_KEY}&secure=true"
-
-#conn = libsql.connect("msr_replica.db", sync_url=TURSO_DB_URL, auth_token=TURSO_DB_KEY)
-#conn.sync()
-
-
-SQLALCHEMY_DATABASE_URL = "sqlite:///./msr_target.db"
-
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-#engine = create_engine(dbUrl, connect_args={'check_same_thread': False}, echo=True)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-================
-File: app/main.py
-================
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
-from pydantic import ValidationError
-from app.routers import quotes  # Import your router
-import os
-import dotenv
-
-dotenv.load_dotenv()
-
-app = FastAPI()
-
-sync_url = os.getenv("NEW_QUOTE_DB_URL")
-auth_token = os.getenv("NEW_QUOTE_DB_KEY")
-print(f"sync_url: {sync_url}")
-print(f"auth_token: {auth_token}")
-
-
-
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-    )
-
-@app.exception_handler(ValidationError)
-async def validation_exception_handler(request: Request, exc: ValidationError):
-    return JSONResponse(
-        status_code=422,
-        content={"detail": exc.errors()},
-    )
-
-@app.exception_handler(Exception)
-async def generic_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "An unexpected error occurred"},
-    )
-
-app.include_router(quotes.router)
-
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Medicare Supplement Rate API"}
-
-================
-File: app/models.py
-================
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, ForeignKey, JSON, VARCHAR, TEXT, INTEGER
-from sqlalchemy.orm import relationship
-from sqlalchemy.schema import Index
-
-Base = declarative_base()
-
-class GroupType(Base):
-    __tablename__ = 'group_type'
-
-    naic = Column(TEXT, primary_key=True)
-    state = Column(TEXT, primary_key=True)
-    group_zip = Column(INTEGER, primary_key=False)
-
-class RateStore(Base):
-    __tablename__ = 'rate_store'
-
-    key = Column(TEXT, primary_key=True, index=True)
-    effective_date = Column(TEXT, primary_key=False, index=True)
-    value = Column(JSON, primary_key=False)
-
-class CompanyNames(Base):
-    __tablename__ = 'company_names'
-
-    id = Column(INTEGER, primary_key=True)
-    naic = Column(VARCHAR, primary_key=False, index=True)
-    name = Column(VARCHAR, primary_key=False)
-
-class GroupMapping(Base):
-    __tablename__ = 'group_mapping'
-
-    naic = Column(TEXT, primary_key=True)
-    state = Column(TEXT, primary_key=True)
-    location = Column(TEXT, primary_key=True)
-    naic_group = Column(INTEGER, primary_key=False)
-
-    __table_args__ = (
-        Index('idx_naic_state_location', 'naic', 'state', 'location'),
-    )
-
-# ... existing models ...
-
-class CarrierSelection(Base):
-    __tablename__ = 'carrier_selection'
-
-    naic = Column(VARCHAR, primary_key=True)
-    company_name = Column(VARCHAR)
-    selected = Column(INTEGER)  # Using INTEGER for boolean (0/1)
-    discount_category = Column(VARCHAR)
-
-================
-File: add_table.py
-================
-from sqlalchemy import create_engine
-from sqlalchemy.sql import text
-
-# Connect to the SQLite database
-engine = create_engine('sqlite:///msr_target.db')
-
-# Execute the ALTER TABLE command
-with engine.connect() as conn:
-    conn.execute(text("ALTER TABLE carrier_selection ADD COLUMN discount_category VARCHAR"))
-    conn.commit()
 
 ================
 File: async_csg.py
@@ -884,6 +156,26 @@ class AsyncCSGRequest:
     self.api_key = api_key
     self.token = None  # Will be set asynchronously in an init method
     self.request_count = 0
+    # Create shared client limits
+    self.limits = httpx.Limits(max_keepalive_connections=50, max_connections=100)
+    self._client = None  # Will be initialized later
+    # Create error tracking for circuit breaker
+    self.consecutive_errors = 0
+    self.error_threshold = 10
+    self.backoff_time = 1
+    self.max_backoff = 30
+
+  async def get_client(self):
+    """Get a shared client with connection pooling to avoid too many open files."""
+    if self._client is None:
+      self._client = httpx.AsyncClient(timeout=TIMEOUT, limits=self.limits)
+    return self._client
+
+  async def close_client(self):
+    """Close the shared client."""
+    if self._client is not None:
+      await self._client.aclose()
+      self._client = None
 
   async def async_init(self):
     try:
@@ -908,8 +200,8 @@ class AsyncCSGRequest:
         f.write(f"[token-config]\ntoken={self.token}")
 
   async def fetch_token(self):
-    async with httpx.AsyncClient() as client:
-      resp = await client.get(self.token_uri)
+    client = await self.get_client()
+    resp = await client.get(self.token_uri)
     if resp.status_code == 200:
       token = resp.json().get("csg_token")
       logging.info(f"Fetched_token is {token}")
@@ -921,13 +213,12 @@ class AsyncCSGRequest:
   async def fetch_token_fallback(self):
     ep = 'auth.json'
     values = {'api_key': self.api_key}
-    async with httpx.AsyncClient() as client:
-      resp = await client.post(self.uri + ep, json=values)
-      resp.raise_for_status(
-      )  # Will raise an exception for 4XX and 5XX status codes
-      token = resp.json()['token']
-      logging.warn(f"Reset token via csg: {token}")
-      return token
+    client = await self.get_client()
+    resp = await client.post(self.uri + ep, json=values)
+    resp.raise_for_status()  # Will raise an exception for 4XX and 5XX status codes
+    token = resp.json()['token']
+    logging.warn(f"Reset token via csg: {token}")
+    return token
 
   def GET_headers(self):
     return {'Content-Type': 'application/json', 'x-api-token': self.token}
@@ -936,36 +227,54 @@ class AsyncCSGRequest:
     print('Resetting token asynchronously')
     await self.set_token(token=None)
 
-  async def get(self, uri, params, full_response=False):
-    async with httpx.AsyncClient(timeout=10.0) as client:
-      resp = await client.get(uri, params=params, headers=self.GET_headers())
-      if resp.status_code == 403:
-        await self.reset_token()
-        resp = await client.get(uri, params=params, headers=self.GET_headers())
-      resp.raise_for_status(
-      )  # Will raise an exception for 4XX and 5XX status codes
-      self.request_count += 1
-      return resp.json() if not full_response else resp
-
-  async def get(self, uri, params, retry=3):
-    for _ in range(retry):  # Retry up to 3 times
+  async def get(self, uri, params, retry=5):
+    """Get with improved error handling and exponential backoff."""
+    for attempt in range(retry):
       try:
-        async with httpx.AsyncClient(
-            timeout=TIMEOUT) as client:  # Increase timeout
-          resp = await client.get(uri,
-                                  params=params,
-                                  headers=self.GET_headers())
-          if resp.status_code == 403:
-            await self.reset_token()
-            resp = await client.get(uri,
-                                    params=params,
-                                    headers=self.GET_headers())
-          resp.raise_for_status(
-          )  # Will raise an exception for 4XX and 5XX status codes
-          self.request_count += 1
-          return resp.json()
-      except ReadTimeout:
-        print("Request timed out. Retrying...")
+        # Apply exponential backoff if this is a retry
+        if attempt > 0:
+          backoff = min(self.backoff_time * (2 ** (attempt - 1)), self.max_backoff)
+          logging.warning(f"Retry {attempt}/{retry} after {backoff}s backoff")
+          await asyncio.sleep(backoff)
+          
+        client = await self.get_client()
+        resp = await client.get(uri, params=params, headers=self.GET_headers())
+        
+        if resp.status_code == 403:
+          await self.reset_token()
+          resp = await client.get(uri, params=params, headers=self.GET_headers())
+        elif resp.status_code in [429, 500, 502, 503, 504]:
+          # Rate limited or server error - retry with backoff
+          logging.warning(f"Received status code {resp.status_code}, retrying...")
+          continue
+          
+        resp.raise_for_status()
+        
+        # Success - reset error counters
+        self.consecutive_errors = 0
+        self.backoff_time = 1
+        
+        self.request_count += 1
+        return resp.json()
+      except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ReadError) as e:
+        # Connection/timeout errors may indicate we're opening too many connections
+        self.consecutive_errors += 1
+        logging.warning(f"Connection error ({attempt+1}/{retry}): {str(e)}")
+        
+        # If we keep getting errors, close and recreate the client
+        if self.consecutive_errors >= self.error_threshold:
+          logging.warning("Too many consecutive errors, recreating client")
+          await self.close_client()
+          self.consecutive_errors = 0
+          self.backoff_time = min(self.backoff_time * 2, self.max_backoff)
+      except Exception as e:
+        logging.error(f"API request error ({attempt+1}/{retry}): {str(e)}")
+        self.consecutive_errors += 1
+        
+        # If this is the last attempt, re-raise
+        if attempt == retry - 1:
+          raise
+    
     raise Exception(f"Request failed after {retry} attempts")
 
   async def _fetch_pdp(self, zip5):
@@ -2076,1136 +1385,1545 @@ print("--- Mean: %s seconds ---" % statistics.mean(run_times))
 """
 
 ================
-File: build_db_new.py
+File: build_duckdb.py
 ================
-# build_db_new.py
-import json
-from typing import List, Dict, Any
-from zips import zipHolder
-from async_csg import AsyncCSGRequest as csg
-from aiolimiter import AsyncLimiter
-from filter_utils import filter_quote
-from config import Config
-from functools import reduce
+#!/usr/bin/env python3
+import argparse
 import asyncio
-import csv
 import logging
-import libsql_experimental as libsql  # Replace sqlite3 import
+import json
+import sys
 import itertools
 import random
-from copy import copy
-import operator
-from datetime import datetime, timedelta
-from db_operations_log import DBOperationsLogger
-from pprint import pprint
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    filename='medicare_supplement_rate_db.log',
-    filemode='a'
-)
-
-logger = logging.getLogger(__name__)
-
-class MedicareSupplementRateDB:
-    def __init__(self, db_path: str, log_operations: bool = True, log_file: str = None):
-        self.conn = libsql.connect(db_path)
-        self.cr = csg(Config.API_KEY)
-        if log_operations:
-            log_filename = log_file if log_file else f"db_operations_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-            self.db_logger = DBOperationsLogger(log_filename)
-        else:
-            self.db_logger = None
-        self._create_tables()
-        self.zip_holder = zipHolder("static/uszips.csv")
-        self.limiter = AsyncLimiter(max_rate=20, time_period=1)
-        self.default_parameters = {
-            "age": 65,
-            "gender": "M",
-            "plan": "G",
-            "tobacco": 0,
-        }
-
-    def _create_tables(self):
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS rate_store (
-                key TEXT,
-                effective_date TEXT,
-                value TEXT,
-                PRIMARY KEY (key, effective_date)
-            )
-        ''')
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_rate_store_date 
-            ON rate_store(effective_date)
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS group_mapping (
-                naic TEXT,
-                state TEXT,
-                location TEXT,
-                naic_group INTEGER,
-                PRIMARY KEY (naic, state, location)
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS group_type (
-                naic TEXT,
-                state TEXT,
-                group_zip INTEGER,
-                PRIMARY KEY (naic, state)
-            )
-        ''')
-        self.conn.commit()
-
-    def get_selected_carriers(self):
-        cursor = self.conn.cursor()
-        try:
-            cursor.execute('''
-                SELECT naic, company_name 
-                FROM carrier_selection 
-                WHERE selected = 1
-            ''')
-            return [{'naic': row[0], 'name': row[1]} for row in cursor.fetchall()]
-        except Exception as e:
-            logging.error(f"Error reading carrier_selection table: {str(e)}")
-            return []
-    
-    async def get_available_naics(self, state: str, effective_date: str):
-        params = copy(self.default_parameters)
-        params["effective_date"] = effective_date
-        zip_random = random.choice(self.zip_holder.lookup_zips_by_state(state))
-        params["zip5"] = zip_random
-        response = await self.cr.fetch_quote(**params)
-        out = set([q.get('company_base',{}).get("naic") for q in response])
-        out.discard(None)
-        return out
-    
-    def get_existing_naics(self, state: str):
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT naic 
-            FROM group_mapping 
-            WHERE state = ?
-        ''', (state,))
-        return set(row[0] for row in cursor.fetchall())
-    
-    def remove_naic(self, naic: str, state: str, include_rates: bool = False):
-        self._execute_and_log(
-            'DELETE FROM group_mapping WHERE naic = ? AND state = ?',
-            (naic, state)
-        )
-        if include_rates:
-            self._remove_rates(state, naic)
-
-    def _remove_rates(self, key: str):
-        self._execute_and_log(
-            'DELETE FROM rate_store WHERE key LIKE ?',
-            (key,)
-        )
-
-    async def set_state_map_naic(self, naic: str, state: str):
-        lookup_list, mapping_type = await self.cr.calc_naic_map_combined2(state, naic)
-        if len(lookup_list) == 0:
-            return False
-        
-        logging.info(f"lookup_list: {lookup_list}")
-        logging.info(f"mapping_type: {mapping_type}")
-        
-        # Prepare data for bulk insert
-        group_mapping_data = []
-        saved_groups = []
-        for i, group in enumerate(lookup_list, 1):
-            group_mapping_data.extend((naic, state, x, i) for x in group)
-            saved_groups.append(f"{state}:{naic}:{i}")
-
-        print(f"saved_groups: {saved_groups}")
-
-        # Bulk insert group mappings
-        cursor = self.conn.cursor()
-        if len(group_mapping_data) > 0:
-            cursor.executemany('''
-                INSERT OR REPLACE INTO group_mapping (naic, state, location, naic_group)
-                VALUES (?, ?, ?, ?)
-            ''', group_mapping_data)
-
-            # Insert group type
-            cursor.execute('''
-                INSERT OR REPLACE INTO group_type (naic, state, group_zip)
-                VALUES (?, ?, ?)
-            ''', (naic, state, int(mapping_type == "zip5")))
-
-        self.conn.commit()
-        return True
-
-    def get_rate_tasks(self, state: str, naic: str, effective_date: str):
-        # get group_type for a given state, naic
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT group_zip FROM group_type WHERE state = ? AND naic = ?
-        ''', (state, naic))
-        group_type = 'zip5' if bool(cursor.fetchone()[0]) else 'county'
-
-        # get all unique naic_group from group_mapping for a given state, naic
-        cursor.execute('''
-            SELECT DISTINCT naic_group FROM group_mapping WHERE state = ? AND naic = ?
-        ''', (state, naic))
-        naic_groups = [x[0] for x in cursor.fetchall()]
-
-        # get 10 locations from group_mapping for each naic,state, naic_group
-        all_tasks = []
-        for naic_group in naic_groups:
-            cursor.execute('''
-                SELECT location FROM group_mapping WHERE state = ? AND naic = ? AND naic_group = ? LIMIT 10
-            ''', (state, naic, naic_group))
-            label = f"{state}:{naic}:{naic_group}"
-            location_list = [x[0] for x in cursor.fetchall()]
-            tasks, _ = self.build_naic_requests(label, location_list, naic, group_type, effective_date)
-            all_tasks.extend(tasks)
-        return all_tasks
-
-    def build_naic_requests(self, label, location_list, naic: str, mapping_type: str, effective_date: str):
-        arg_holder = []
-        tasks = []
-        main_location = location_list[0]
-        tobacco_options = [0, 1]
-        age_options = [65, 70, 75, 80, 85, 90, 95]
-        gender_options = ["M", "F"]
-
-        state = label.split(":")[0]
-        if state == 'MA':
-            plan_options = ['MA_CORE', 'MA_SUPP1']
-        elif state == 'MN':
-            plan_options = ['MN_BASIC', 'MN_EXTB']
-        elif state == 'WI':
-            plan_options = ['WIR_A50%']
-        else:
-            plan_options = ['N', 'G', 'F']
-        
-
-        additional_keys = ["tobacco", "age", "gender", "plan"]
-        additional_values = [tobacco_options, age_options, gender_options, plan_options]
-        #naic = label.split(":")[1]
-
-        #print(main_location)   
-        args = {
-            "select": 0,
-            "naic": naic,
-            "label": label,
-            "effective_date": effective_date,
-        }
-        if mapping_type == 'zip5':
-            args['zip5'] = main_location
-            args['zip5_fallback'] = location_list[1:]
-        else:
-            try:
-                all_zips0 = list(map(lambda x: self.zip_holder.lookup_zip_by_county(state, x), location_list))
-                singe_county_zips = []
-                for zips in all_zips0:
-                    for z in zips:
-                        counties = self.zip_holder.lookup_county2(z)
-                        if len(counties) == 1:
-                            singe_county_zips.append(z)
-                random_zip = random.choice(singe_county_zips)
-                singe_county_zips.remove(random_zip) 
-                args['zip5'] = random_zip
-                args['zip5_fallback'] = singe_county_zips[:10]
-
-                # hardcoded because lots of overlap in counties / zips
-                if label == 'VA:67369:2':
-                    args['zip5'] = '22209'
-            except Exception as e:  
-                logging.error(f"Error processing {location_list}: {e}")
-                return [], []
-
-        if state in ['NY', 'MA']:
-            args.pop('naic')
-
-        combinations = [
-            dict(zip(additional_keys, values))
-            for values in itertools.product(*additional_values)
-        ]
-
-        self._remove_rates(label)
-
-        for (i, combination) in enumerate(combinations):
-            args = copy(args)
-            cargs = copy(args)
-            cargs.update(combination)
-            arg_holder.append(cargs)
-            tasks.append(self.fetch_and_process_and_save(cargs, retry=10))
-
-        return tasks, arg_holder    
-    
-    async def fetch_and_process(self, cargs, retry):
-        results, label = await self.fetch_helper(cargs, retry)
-        fr = [winnow_quotes(process_quote(q, label)) for q in results]
-        return fr, label
-    
-    async def fetch_and_process_and_save(self, cargs, retry):
-        fr, label = await self.fetch_and_process(cargs, retry)
-        for ls in fr:
-            dic = dic_build(ls)
-            #pprint(dic)
-            self._save_results(dic, cargs['effective_date'])
-        return fr, label
-
-    async def fetch_helper(self, args, retry=3, fallback_index=0, max_empty_attempts=5):
-        original_zip5 = args['zip5']
-        zip5_fallback = args.pop('zip5_fallback')
-        label = args.pop('label')
-        
-        empty_results_count = 0  # Track number of empty results
-
-        while fallback_index < len(zip5_fallback):
-            current_retry = retry
-            while current_retry > 0:
-                try:    
-                    async with self.limiter:
-                        results = await self.cr.load_response_inner(args)
-                        if results:  # If we got any results
-                            return results, label
-                        else:
-                            empty_results_count += 1
-                            logging.warning(f"No results for {args['zip5']}")
-                            if empty_results_count >= max_empty_attempts:
-                                logging.warning(f"Giving up after {max_empty_attempts} empty results for {label}")
-                                return [], label
-                            break  # Break inner loop to try next ZIP code
-                except Exception as e:
-                    logging.error(f"An error occurred for request: {args}")
-                    logging.error(f"Error details: {e}")
-                    if current_retry > 1:
-                        logging.info(f"Retrying request: {args} (Retry attempt: {11 - current_retry})")
-                        await asyncio.sleep(0.2)
-                        current_retry -= 1
-                    else:
-                        break
-            
-            fallback_index += 1
-            if fallback_index < len(zip5_fallback):
-                args['zip5'] = zip5_fallback[fallback_index]
-            
-        # If all fallbacks have been exhausted, restore original values and log a warning
-        args['zip5'] = original_zip5
-        logging.warning(f"All retry attempts and fallback locations exhausted for args: {args}")
-        return [], label
-    
-    def _save_results(self, dic, effective_date):
-        for k, v in dic.items():
-            self._set_rate(k, v, effective_date)
-
-    def _set_rate(self, key: str, value: Dict[str, Any], effective_date: str):
-        # Use INSERT OR REPLACE with json_set to append to array
-        self._execute_and_log(
-            '''INSERT INTO rate_store (key, effective_date, value) 
-               VALUES (?, ?, json(?))
-               ON CONFLICT(key, effective_date) 
-               DO UPDATE SET value = json_patch(
-                   CASE 
-                       WHEN value IS NULL THEN '{}' 
-                       ELSE value 
-                   END,
-                   json(?)
-               )''',
-            (key, effective_date, json.dumps(value), json.dumps(value))
-        )
-    
-    def _get_group_id(self, naic: str, state: str, location: str) -> int:
-        cursor = self.conn.cursor()
-        result = cursor.execute('''
-            SELECT naic_group FROM group_mapping
-            WHERE naic = ? AND state = ? AND location = ?
-        ''', (naic, state, location)).fetchone()
-        return result[0] if result else None
-
-    def _get_rate(self, key: str, effective_date: str) -> Any:
-        logging.info(f"Getting key: {key} for effective date: {effective_date}")
-        cursor = self.conn.cursor()
-        result = cursor.execute(
-            'SELECT value FROM rate_store WHERE key = ? AND effective_date = ?', 
-            (key, effective_date)
-        ).fetchone()
-        
-        if result:
-            # Parse the JSON string directly from the value column
-            return json.loads(result[0])
-        return None
-
-    def _execute_and_log(self, query: str, params: Any = None, many: bool = False):
-        cursor = self.conn.cursor()
-        if many:
-            cursor.executemany(query, params)
-        else:
-            cursor.execute(query, params)
-        
-        if self.db_logger:
-            self.db_logger.log_operation(
-                'executemany' if many else 'execute',
-                query,
-                params
-            )
-        self.conn.commit()
-
-    async def fetch_current_rates(self, state, zip_code, county, effective_date, naic_list = None):
-        csg = self.cr
-        query_data = {
-            'zip5': zip_code,
-            'county': county,
-            'age': 65,
-            'gender': 'M',
-            'tobacco': 0,
-            'effective_date': effective_date,
-            'plan': 'G',  # Assuming Plan G, modify as needed
-            'select': 0
-        }
-        if state == 'MN':
-            query_data['plan'] = 'MN_BASIC'
-        elif state == 'WI':
-            query_data['plan'] = 'WI_BASE'
-        elif state == 'MA':
-            query_data['plan'] = 'MA_CORE'
-
-        if naic_list is not None:
-            query_data['naic'] = naic_list
-    
-        return await csg.fetch_quote(**query_data)
-    
-    async def get_naic_data(self, state, zip5, county, available_naics):
-        existing_naics = self.get_existing_naics(state)
-        selected_naics = [x["naic"] for x in self.get_selected_carriers()]
-        naic_list = available_naics.intersection(selected_naics)
-
-        nais_to_remove = existing_naics - available_naics
-        for naic in nais_to_remove:
-            pass #self.remove_naic(naic, state, include_rates=True)
-
-        missing_naics = set()
-
-        labels = {}
-        for naic in naic_list:
-            group_id = self._get_group_id(naic, state, zip5)
-            if group_id is None:
-                group_id = self._get_group_id(naic, state, county)
-            if group_id is not None:
-                labels[naic] = f"{state}:{naic}:{group_id}"
-            else:
-                logging.warning(f"No group id found for naic: {naic} in state: {state} and zip: {zip5}")
-                missing_naics.add(naic)
-        inv_labels = {v: k for k, v in labels.items()}
-        naic_short_list = list(set(naic_list) - missing_naics)
-        return labels, inv_labels, naic_list, missing_naics
-
-    async def check_rate_changes(self, state, zip5=None, effective_date: str = None, available_naics: set = None):
-        logging.info(f"Checking rate changes for state: {state}")
-        
-        # Get a random zip code for the state
-        state_zips = [k for k, v in self.zip_holder.zip_states.items() if v == state]
-        if not state_zips:
-            logging.warning(f"No zip codes found for state: {state}")
-            return
-        
-        random_zip = zip5 if zip5 else random.choice(state_zips)
-        logging.info(f"Using zip: {random_zip}")
-        matching_county = self.zip_holder.lookup_county(random_zip)[0]
-        logging.info(f"matching_county: {matching_county}")
-        
-        # Get the carriers for this state
-        if available_naics is None:
-            available_naics = await self.get_available_naics(state, effective_date)
-
-        labels, inv_labels, naic_list, missing_naics = await self.get_naic_data(state, random_zip, matching_county, available_naics)
-        naic_short_list = list(set(naic_list) - missing_naics)
-
-        current_rates = await self.fetch_current_rates(state, random_zip, matching_county, effective_date)
-        current_rates = [q for q in current_rates if q.get('company_base', {}).get('naic') in naic_short_list]
-        logging.info(f"number of rates: {len(current_rates)}")
-        logging.info(f"zip / county: {random_zip} / {matching_county}")
-
-        processed_quotes = [quote for q in current_rates for quote in process_quote(q, labels[q['company_base']['naic']])]
-
-    
-        if state == 'MN':
-            compare_plan = 'MN_BASIC'
-        elif state == 'WI':
-            compare_plan = 'WI_BASE'
-        elif state == 'MA':
-            compare_plan = 'MA_CORE'
-        else:
-            compare_plan = 'G'
-
-        rdic = {}
-        for q in processed_quotes:
-            dic = rdic.get(q['label'], {})
-            if q['label']:
-                q_key = f"{q['age']}:{q['gender']}:{q['plan']}:{q['tobacco']}"
-                dic[q_key] = q
-                rdic[q['label']] = dic
-
-        copy_empty_rate_tasks = []
-        for naic in naic_short_list:
-            copy_empty_rate_tasks.append(self.copy_latest_rates(state, naic, effective_date))
-        await asyncio.gather(*copy_empty_rate_tasks)
-
-        stored_rates = {k: self._get_rate(k, effective_date) for k in rdic.keys()}
-        sr = {}
-        for k, dic in stored_rates.items():
-            if dic is None:  # Handle case where no stored rates exist
-                sr[k] = None
-                continue
-                
-            test_case = dic.get("65:M:G:False")
-            sr[k] = test_case
-
-
-        s_dic = {}
-        for k, v in rdic.items():
-            stored_rate = rdic.get(k, {}).get(f"65:M:G:False")
-            fetched_rate = sr.get(k)
-            if stored_rate is None or fetched_rate is None:
-                s_dic[inv_labels[k]] = True
-            else:
-                s_dic[inv_labels[k]] = fetched_rate['rate'] != stored_rate['rate']
-
-        for naic in list(missing_naics):
-            s_dic[naic] = True
- 
-        return rdic, sr, s_dic
-    
-
-    async def get_rates_for_date(self, state: str, naic: str, effective_date: str) -> Dict:
-        """Get all rates for a given state/naic combination on a specific date"""
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT key, value 
-            FROM rate_store 
-            WHERE key LIKE ? AND effective_date = ?
-        ''', (f"{state}:{naic}:%", effective_date))
-        
-        results = {}
-        for key, value in cursor.fetchall():
-            if value:  # Check if value exists and is not None
-                results[key] = json.loads(value)
-        return results
-
-    async def copy_rates(self, state: str, naic: str, source_date: str, target_date: str) -> bool:
-        """Copy rates from source_date to target_date for a given state/naic combination"""
-        # Get rates from source date
-        source_rates = await self.get_rates_for_date(state, naic, source_date)
-        if not source_rates:
-            logging.warning(f"No rates found to copy from {source_date} for {state} {naic}")
-            return False
-
-        # Copy rates to target date
-        cursor = self.conn.cursor()
-        for key, value in source_rates.items():
-            self._execute_and_log(
-                '''INSERT OR REPLACE INTO rate_store (key, effective_date, value)
-                   VALUES (?, ?, ?)''',
-                (key, target_date, json.dumps(value))
-            )
-        
-        logging.info(f"Copied {len(source_rates)} rates from {source_date} to {target_date} for {state} {naic}")
-        return True
-    
-    async def copy_latest_rates(self, state: str, naic: str, target_date: str, force: bool = False):
-        # Check if target date data exists and is valid JSON
-        if not force:
-            cursor = self.conn.cursor()
-            cursor.execute('''
-                SELECT COUNT(*) 
-                FROM rate_store 
-                WHERE key LIKE ? 
-                AND effective_date = ?
-                AND json_valid(value)
-            ''', (f"{state}:{naic}:%", target_date))
-            
-            if cursor.fetchone()[0] > 0:
-                logging.info(f"Rates already exist for {state} {naic} on {target_date}")
-                return True
-
-        latest_rates = await self.get_most_recent_rates(state, naic)
-        for key, value in latest_rates.items():
-            self._execute_and_log(
-                '''INSERT OR REPLACE INTO rate_store (key, effective_date, value)
-                   VALUES (?, ?, ?)''',
-                (key, target_date, json.dumps(value['rate_data']))
-            )
-            logging.info(f"Copied {key} rates from {value['effective_date']} to {target_date}")
-        return True
-            
-    
-    async def get_most_recent_rates(self, state: str, naic: str) -> Dict:
-        """Get the most recent rates for each group_id for a given state/naic combination"""
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            WITH RankedRates AS (
-                SELECT 
-                    key,
-                    value,
-                    effective_date,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY replace(replace(key, ?, ''), ':', '') 
-                        ORDER BY effective_date DESC
-                    ) as rn
-                FROM rate_store
-                WHERE key LIKE ?
-                AND json_valid(value)
-            )
-            SELECT key, value, effective_date
-            FROM RankedRates 
-            WHERE rn = 1
-        ''', (f"{state}:{naic}:", f"{state}:{naic}:%"))
-        
-        results = {}
-        for key, value, effective_date in cursor.fetchall():
-            if value:  # Check if value exists and is not None
-                results[key] = {
-                    'rate_data': json.loads(value),
-                    'effective_date': effective_date
-                }
-        return results
-
-    def get_discount_category(self, naic: str) -> str:
-        """Get discount category for a single NAIC."""
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT discount_category 
-            FROM carrier_selection 
-            WHERE naic = ?
-        ''', (naic,))
-        result = cursor.fetchone()
-        return result[0] if result else None
-
-    def get_discount_categories(self, naics: List[str]) -> Dict[str, str]:
-        """Get discount categories for multiple NAICs.
-        
-        Args:
-            naics: List of NAIC strings
-            
-        Returns:
-            dict: Dictionary mapping NAICs to their discount categories
-        """
-        cursor = self.conn.cursor()
-        # Using placeholders for the IN clause
-        placeholders = ','.join('?' * len(naics))
-        cursor.execute(f'''
-            SELECT naic, discount_category 
-            FROM carrier_selection 
-            WHERE naic IN ({placeholders})
-        ''', naics)
-        return dict(cursor.fetchall())
-
-def process_quote(q0, label):
-    logging.info(f"Processing quote: {label}")
-    quote = filter_quote(q0)
-    if quote is None:
-        return []
-    gender = quote['gender']
-    tobacco = quote['tobacco']
-    age = quote['age']
-    plan = quote['plan']
-    rate = quote['rate']
-    rate_mults = [1.0] + [x + 1 for x in quote['age_increases']]
-    try:
-        discount_mult = (1 - quote['discounts'][0].get('value'))
-    except:
-        discount_mult = 1
-    ages = [age + i for i in range(len(rate_mults))]
-    arr = []
-    for i, age in enumerate(ages):  
-        rate_value = round(rate * reduce(lambda x, y: x * y, rate_mults[:i + 1]), 2)
-        discount_value = round(discount_mult * rate_value, 2)
-        arr.append({
-            'age': age,
-            'gender': gender,
-            'plan': plan,
-            'tobacco': tobacco,
-            'rate': rate_value,
-            'discount_rate': discount_value,
-            'label': label
-        })
-    return arr
-
-def winnow_quotes(quotes):
-    unique_quotes = {}
-    for quote in quotes:
-        key = (quote['age'], quote['gender'], quote['plan'], quote['tobacco'])
-        if key in unique_quotes:
-            if quote['rate'] > unique_quotes[key]['rate']:
-                unique_quotes[key] = quote
-        else:
-            unique_quotes[key] = quote
-    return list(unique_quotes.values())
-
-def dic_build(flat_list):
-    dic = {}
-    for q in flat_list:
-        label = q['label']
-        arr = dic.get(label, [])
-        arr.append(q)
-        dic[label] = arr
-
-    dic_out = {}
-    for label, arr in dic.items():
-        d = {}
-        for q in arr:
-            q_key = f"{q['age']}:{q['gender']}:{q['plan']}:{q['tobacco']}"
-            d[q_key] = q
-        dic_out[label] = d
-    return dic_out
-
-================
-File: check_script.py
-================
-import argparse
-import logging
-import random
-from datetime import datetime, timedelta
-from build_db_new import MedicareSupplementRateDB
-import asyncio
-from aiolimiter import AsyncLimiter
-from zips import zipHolder
-import json
 import os
-import libsql_experimental as libsql
-import traceback
-from collections import defaultdict
-from pprint import pprint
+import uuid
+from typing import List, Dict, Set, Tuple, Any, Optional
+from datetime import datetime, timedelta
+import duckdb
+from async_csg import AsyncCSGRequest as csg
+from zips import zipHolder
+from config import Config
+from copy import copy
+from functools import reduce
+from filter_utils import filter_quote
+import httpx
+import resource
+from spot_check import RateSpotChecker
 
-async def sync_turso():
-    url = os.getenv("NEW_QUOTE_DB_URL")
-    key = os.getenv("NEW_QUOTE_DB_KEY")
-    conn = libsql.connect("replica.db", sync_url=url, auth_token=key)
-    conn.sync()
-    return conn
+# Increase system file limits if possible
+try:
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (min(4096, hard), hard))
+    logging.info(f"Set file descriptor limit to {min(4096, hard)}")
+except Exception as e:
+    logging.warning(f"Unable to increase file descriptor limit: {e}")
 
-def validate_effective_date(date_str: str) -> datetime:
-    """Validate and parse effective date string"""
-    try:
-        date = datetime.strptime(date_str, '%Y-%m-%d')
-        if date.day != 1:
-            raise ValueError("Effective date must be the first day of a month")
-        return date
-    except ValueError as e:
-        raise ValueError(f"Invalid effective date format: {e}")
+# Global connection pool limits
+MAX_CONNECTIONS = 100
+GLOBAL_SEMAPHORE = None
 
-def get_default_effective_date(months_ahead: int = 0) -> str:
-    """Get the effective date (first of next month + optional months ahead)"""
-    today = datetime.now()
-    if today.day == 1 and months_ahead == 0:
-        return today.strftime('%Y-%m-%d')
-    next_month = today.replace(day=1) + timedelta(days=32)
-    target_date = next_month.replace(day=1)
-    if months_ahead > 0:
-        for _ in range(months_ahead):
-            target_date = (target_date + timedelta(days=32)).replace(day=1)
-    return target_date.strftime('%Y-%m-%d')
-
-async def process_state_tasks(db, state, num_zips, rate_limiter, effective_date):
-    zip_holder = zipHolder("static/uszips.csv")
-    state_zips = [k for k, v in zip_holder.zip_states.items() if v == state]
+def setup_logging(quiet: bool) -> None:
+    """Set up logging to file and console."""
+    log_filename = f'build_duckdb_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     
-    if not state_zips:
-        logging.warning(f"No ZIP codes found for state: {state}")
-        return None
-
-    async def process_zip(random_zip):
-        try:
-            logging.info(f"Processing state: {state}, zip: {random_zip}, effective date: {effective_date}")
-            async with rate_limiter:
-                r, s, v = await db.check_rate_changes(state, random_zip, effective_date)
-            return {
-                "zip": random_zip,
-                "state": state,
-                "effective_date": effective_date,
-                #"current_rates": r,
-                #"stored_rates": s,
-                "changes": v
-            }
-        except Exception as e:
-            logging.error(f"Error processing state: {state}, zip: {random_zip}. Error: {str(e)}")
-            logging.error(traceback.format_exc())
-            return {
-                "zip": random_zip,
-                "state": state,
-                "effective_date": effective_date,
-                #"current_rates": None,
-                #"stored_rates": None,
-                "changes": None,
-                "error": str(e)
-            }
-
-    selected_zips = random.sample(state_zips, min(num_zips, len(state_zips)))
-    tasks = [process_zip(zip_code) for zip_code in selected_zips]
-    return tasks
-
-
-def print_changes(changes):
-    """Print formatted rate changes"""
-    if not changes:
-        logging.info("No changes found in any state or NAIC code.")
-        return
-
-    for state, naic_data in changes.items():
-        logging.info(f"\nState: {state}")
-        for naic, change_types in naic_data.items():
-            logging.info(f"  NAIC: {naic}")
-            if 'modified' in change_types:
-                logging.info("    Modified rates")
-            if 'new' in change_types:
-                logging.info("    New rates")
-
-async def process_rate_changes(states_to_process, dates_to_process, num_zips=1, db_path=None, 
-                             output_file=None, no_sync=False):
-    """
-    Process rate changes for given states and dates.
-    
-    Args:
-        states_to_process (list): List of state codes to process
-        dates_to_process (list): List of effective dates to check
-        num_zips (int): Number of random ZIP codes to use per state
-        db_path (str): Path to database file
-        output_file (str): Path to output file
-        no_sync (bool): Whether to skip Turso sync
-    
-    Returns:
-        dict: Results of rate changes by date
-    """
-    date_results = {date: {
-        'effective_date': date,
-        'states_with_changes': set(),
-        'changes': {}
-    } for date in dates_to_process}
-
-    try:
-        if not no_sync:
-            await sync_turso()
-
-        db = MedicareSupplementRateDB(db_path=db_path)
-        logging.info(f"Using database: {db_path}")
-        await db.cr.async_init()
-        await db.cr.fetch_token()
-
-        rate_limiter = AsyncLimiter(20, 1)
-
-        # Process each state
-        tasks = []
-        task_index = {}
-        task_count = 0
-        for state in states_to_process:
-            for effective_date in dates_to_process:
-                state_tasks = await process_state_tasks(db, state, num_zips, rate_limiter, effective_date)
-                if state_tasks:
-                    ii = task_count
-                    task_count += len(state_tasks)
-                    task_index[(state, effective_date)] = (ii,task_count)
-                    tasks.extend(state_tasks)
-
-        results_all = await asyncio.gather(*tasks)
-        
-        if results_all:
-            for result in results_all:
-                effective_date = result['effective_date']
-                dic_to_extend = date_results.get(effective_date, {})
-                state = result['state']
-                change_dic = dic_to_extend.get('changes',{}).get(state,{})
-                any_changes = False
-                for naic, bool_ in result['changes'].items():
-                    flag = bool_ or change_dic.get(naic, False)
-                    change_dic[naic] = flag
-                    any_changes = any_changes or flag
-                if any_changes:
-                    dic_to_extend['states_with_changes'].add(state)
-                dic_to_extend['changes'][state] = change_dic
-                date_results[effective_date] = dic_to_extend
-
-        for k, v in date_results.items():
-            v['states_with_changes'] = list(v['states_with_changes'])
-            date_results[k] = v
-                
-        if date_results and output_file:
-            with open(output_file, 'w') as f:
-                json.dump(date_results, f, indent=2)
-            logging.info(f"Results written to {output_file}")
-
-        return date_results
-
-    except Exception as e:
-        logging.error(f"Error in processing: {str(e)}")
-        logging.error(traceback.format_exc())
-        raise
-
-async def main():
-    parser = argparse.ArgumentParser(description="Test Medicare Supplement Rate changes.")
-    parser.add_argument("-a", "--all", action="store_true", help="Process all states")
-    parser.add_argument("--multiple", nargs="+", help="Process multiple specified states")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress console output")
-    parser.add_argument("-n", "--num_zips", type=int, default=1, help="Number of random ZIP codes to use per state")
-    parser.add_argument("-o", "--output", type=str, help="Output file name")
-    parser.add_argument("-d", "--db", type=str, help="Database file name")
-    parser.add_argument("-e", "--effective-date", type=str, help="Effective date (YYYY-MM-DD)")
-    parser.add_argument("-f", "--full-changes", action="store_true", default=False, help="Output full changes")
-    parser.add_argument("--no-sync", action="store_true", help="Do not sync Turso replica")
-    parser.add_argument("state", nargs="?", help="Process a single state")
-    parser.add_argument("-m", "--months", type=int, help="Number of months ahead to check")
-    parser.add_argument("-g", "--group", type=int, help="Process group of states")
-
-    state_list = [
-        'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
-        'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
-        'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
-        'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
-        'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
-        'DC'
-    ]
-    
-    args = parser.parse_args()
-    
-    # Get list of dates to process
-    dates_to_process = []
-    if args.effective_date:
-        dates_to_process = [args.effective_date]
-    elif args.months:
-        for i in range(args.months-1, -1, -1):
-            dates_to_process.append(get_default_effective_date(i))
-    else:
-        dates_to_process = [get_default_effective_date()]
-
-    # Define states to process
-    states_to_process = []
-    if args.all:
-        states_to_process = state_list
-    elif args.multiple:
-        states_to_process = [s for s in args.multiple if s in state_list]
-    elif args.group:
-        if args.group in range(1, 6):
-            i = (args.group - 1) * 10
-            j = i + 10 if i + 10 < 51 else 51
-            states_to_process = state_list[i:j]
-        else:
-            logging.error(f"Invalid group number: {args.group}. Must be between 1 and 5")
-            return
-    elif args.state and args.state in state_list:
-        states_to_process = [args.state]
-
-    if not states_to_process:
-        logging.error("No valid states to process")
-        return
-
-    results = await process_rate_changes(
-        states_to_process=states_to_process,
-        dates_to_process=dates_to_process,
-        num_zips=args.num_zips,
-        db_path=args.db,
-        output_file=args.output,
-        no_sync=args.no_sync
+    logging.basicConfig(
+        level=logging.INFO,
+        format=log_format,
+        handlers=[
+            logging.FileHandler(log_filename),
+            logging.StreamHandler() if not quiet else logging.NullHandler()
+        ]
     )
 
-    if results and not args.output:
-        print(json.dumps(results, indent=2))
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-================
-File: config.py
-================
-import os
-
-class Config(object):
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'you-will-never-guess'
-    CSG_TOKEN = os.environ.get('CSG_TOKEN') or None
-    API_KEY = os.environ.get('API_KEY') or '2150e5ea35698640582ef9c511c8090210b2f7a0f8e53672094b8e5d3c7f9275'
-    #BASIC_AUTH_FORCE = True
-
-================
-File: copy_data_forward.py
-================
-from build_db_new import MedicareSupplementRateDB
-
-import asyncio
-from pprint import pprint
-
-import logging
-import time
-
-from datetime import datetime, timedelta
-ar = asyncio.run
-
-async def init(db):
-    await db.cr.async_init()
-    await db.cr.fetch_token()
-
-state_list = [
-            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-            "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-            "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-            "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-            "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
-            "DC"
-        ]
-
-def get_default_effective_date(months_ahead: int = 0) -> str:
-    """Get the effective date (first of next month + optional months ahead)"""
-    today = datetime.now()
-    if today.day == 1 and months_ahead == 0:
-        return today.strftime('%Y-%m-%d')
-    next_month = today.replace(day=1) + timedelta(days=32)
-    target_date = next_month.replace(day=1)
-    if months_ahead > 0:
-        for _ in range(months_ahead):
-            target_date = (target_date + timedelta(days=32)).replace(day=1)
-    return target_date.strftime('%Y-%m-%d')
-
-async def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="Fetch quotes for random zip codes")
-    parser.add_argument("-d", "--db", type=str, help="Database to use")
-    parser.add_argument("-m", "--months", type=int, default=3, help="Number of months to copy forward")
-    parser.add_argument("start_date", type=str, help="Start date in YYYY-MM-DD format to copy rates from")
-    args = parser.parse_args()
-    db = MedicareSupplementRateDB(args.db)
-
-    # Initialize database connection and token inside the async context
-    await init(db)
-    tasks = []
-    target_dates_all = [get_default_effective_date(i) for i in range(100)]
-    # Find index of start_date in target_dates_all
+def load_carrier_selections() -> List[str]:
+    """Load carrier selections from config file."""
     try:
-        start_idx = target_dates_all.index(args.start_date)
-    except ValueError:
-        raise ValueError(f"Start date {args.start_date} not found in target dates. Must be first of month within next 100 months.")
-    # Get next m dates after start_date
-    target_dates = target_dates_all[start_idx+1:start_idx+1+args.months]
-    logging.info(f"Copying rates from {args.start_date} to dates: {target_dates}")
-    for state in state_list:
-        naics = db.get_existing_naics(state)
-        for naic in naics:
-            for td in target_dates:
-                tasks.append(db.copy_rates(state, naic, args.start_date, td))
-                                           
-    logging.info(f"Tasks: {len(tasks)}. Running sequentially.")
-    start_time = time.time()
-    for t in tasks:
-        await t
-    end_time = time.time()
-    logging.info(f"Time taken: {end_time - start_time} seconds to run {len(tasks)} tasks")
-    return db
-    
-if __name__ == "__main__":
-    db = asyncio.run(main())
+        with open('carrier_selections.json', 'r') as f:
+            data = json.load(f)
+            return [naic for naic, selected in data.items() if selected]
+    except FileNotFoundError:
+        logging.error("carrier_selections.json not found. Please run select_carriers.py first.")
+        sys.exit(1)
 
-================
-File: date_utils.py
-================
-from datetime import datetime, timedelta
-from typing import List
-import re
-
-def get_effective_dates(num_months: int = 6) -> List[str]:
-    """
-    Generate a list of effective dates starting from the first of next month
-    for the specified number of months.
-    
-    Args:
-        num_months (int): Number of months to generate dates for (default: 6)
-    
-    Returns:
-        List[str]: List of dates in YYYY-MM-DD format
-    """
-    # Start with first day of next month
+def generate_effective_dates(months: int = 6) -> List[str]:
+    """Generate a list of effective dates (first of the next N months)."""
     today = datetime.now()
+    
+    # Start with the first day of next month
     if today.day == 1:
         start_date = today
     else:
         start_date = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
     
-    dates = []
+    effective_dates = []
     current_date = start_date
-    for _ in range(num_months):
-        dates.append(current_date.strftime('%Y-%m-%d'))
-        # Move to first day of next month
+    for _ in range(months):
+        effective_dates.append(current_date.strftime('%Y-%m-%d'))
         current_date = (current_date + timedelta(days=32)).replace(day=1)
     
-    return dates
+    return effective_dates
 
-def validate_effective_date(date_str: str) -> bool:
-    """
-    Validate that a date string is in YYYY-MM-DD format and is the first day of a month.
-    
-    Args:
-        date_str (str): Date string to validate
+def get_all_states() -> List[str]:
+    """Return a list of all US states and DC."""
+    return [
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+        "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+        "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+        "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+        "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+        "DC"
+    ]
+
+
+class DuckDBMedicareBuilder:
+    def __init__(self, db_path: str, max_rate_limit: int = 50):
+        """Initialize the DuckDB Medicare rate database builder."""
+        self.db_path = db_path
+        self.max_rate_limit = max_rate_limit
         
-    Returns:
-        bool: True if valid, False otherwise
-    """
-    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
-        return False
+        # Connect to DuckDB
+        self.conn = duckdb.connect(db_path)
         
-    try:
-        date = datetime.strptime(date_str, '%Y-%m-%d')
-        return date.day == 1
-    except ValueError:
-        return False
-
-def copy_effective_date_data(db, from_date: str, to_date: str) -> None:
-    """
-    Copy rate store data from one effective date to another.
-    
-    Args:
-        db: Database connection object
-        from_date (str): Source effective date in YYYY-MM-DD format
-        to_date (str): Target effective date in YYYY-MM-DD format
-    """
-    if not validate_effective_date(from_date) or not validate_effective_date(to_date):
-        raise ValueError("Both dates must be in YYYY-MM-DD format and be the first day of a month")
+        # Initialize API client
+        self.cr = csg(Config.API_KEY)
         
-    cursor = db.connect_turso()
+        # Initialize zipHolder
+        self.zip_holder = zipHolder("static/uszips.csv")
+        
+        # Create necessary tables and indexes
+        self._create_tables()
+        
+        # Create shared HTTP client for connection reuse
+        self.limits = httpx.Limits(max_keepalive_connections=50, max_connections=MAX_CONNECTIONS)
+        
+        # Initialize semaphores for concurrency control
+        global GLOBAL_SEMAPHORE
+        GLOBAL_SEMAPHORE = asyncio.Semaphore(MAX_CONNECTIONS)
+        self.region_semaphore = asyncio.Semaphore(20)  # Limit concurrent regions
+        self.demographic_semaphore = asyncio.Semaphore(30)  # Limit concurrent demographic combinations
+        
+        # Initialize spot checker for propagating rates across months
+        self.spot_checker = RateSpotChecker(db_path)
     
-    # Copy data from source date to target date
-    cursor.execute("""
-        INSERT OR REPLACE INTO rate_store (key, effective_date, value)
-        SELECT key, ?, value
-        FROM rate_store
-        WHERE effective_date = ?
-    """, (to_date, from_date))
+    def _create_tables(self):
+        """Create optimized tables and indexes for rate lookups using region-based approach."""
+        # Create regions table to track unique carrier-specific regions
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS rate_regions (
+                region_id TEXT,
+                naic TEXT,
+                state TEXT,
+                mapping_type TEXT,
+                region_data TEXT,  -- JSON array of ZIP codes or counties in the region
+                PRIMARY KEY (region_id)
+            )
+        """)
+        
+        # Create region mapping table to map ZIP codes to regions
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS region_mapping (
+                zip_code TEXT,
+                region_id TEXT,
+                naic TEXT,
+                PRIMARY KEY (zip_code, naic)
+            )
+        """)
+        
+        # Create rate_store table at the region level
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS rate_store (
+                region_id TEXT,
+                gender TEXT,
+                tobacco INTEGER,
+                age INTEGER,
+                naic TEXT,
+                plan TEXT,
+                rate FLOAT,
+                discount_rate FLOAT,
+                effective_date TEXT,
+                state TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (region_id, gender, tobacco, age, naic, plan, effective_date, state)
+            )
+        """)
+        
+        # Create indexes for optimized lookups
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_region_lookup ON region_mapping (zip_code, naic)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_rate_lookup ON rate_store (region_id, gender, tobacco, age)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_naic ON rate_store (naic)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_effective_date ON rate_store (effective_date)")
+        
+        # Create carrier_info table for metadata
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS carrier_info (
+                naic TEXT PRIMARY KEY,
+                company_name TEXT,
+                selected INTEGER DEFAULT 1
+            )
+        """)
+        
+        # Create metadata table to track processed combinations
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS processed_data (
+                state TEXT,
+                naic TEXT,
+                effective_date TEXT,
+                processed_at TIMESTAMP,
+                success BOOLEAN,
+                PRIMARY KEY (state, naic, effective_date)
+            )
+        """)
+        
+        # Check if api_effective_date column exists in processed_data and add it if not
+        try:
+            result = self.conn.execute("SELECT api_effective_date FROM processed_data LIMIT 1")
+        except Exception:
+            logging.info("Adding api_effective_date column to processed_data table")
+            self.conn.execute("ALTER TABLE processed_data ADD COLUMN api_effective_date TEXT")
+            
+        # Clean up orphaned processed entries
+        self.cleanup_orphaned_entries()
     
-    db.conn.commit()
-
-================
-File: db_operations_log.py
-================
-import json
-from datetime import datetime
-from typing import Any, List, Tuple
-
-class DBOperationsLogger:
-    def __init__(self, log_file_path: str):
-        self.log_file_path = log_file_path
-
-    def log_operation(self, operation: str, query: str, params: Any = None):
-        log_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'operation': operation,
-            'query': query,
-            'params': params
-        }
-        with open(self.log_file_path, 'a') as f:
-            f.write(json.dumps(log_entry) + '\n')
-
-    def replay_operations(self, db_connection):
-        cursor = db_connection.cursor()
-        with open(self.log_file_path, 'r') as f:
-            for line in f:
-                operation = json.loads(line)
-                if operation['params']:
-                    cursor.execute(operation['query'], operation['params'])
+    def cleanup_orphaned_entries(self):
+        """Remove entries in the processed_data table that don't have actual rate data."""
+        try:
+            # Find processed entries that have no corresponding rate data
+            orphaned = self.conn.execute("""
+                SELECT p.state, p.naic, p.effective_date
+                FROM processed_data p
+                WHERE p.success = true
+                AND NOT EXISTS (
+                    SELECT 1 FROM rate_store r 
+                    WHERE r.naic = p.naic AND r.state = p.state AND r.effective_date = p.effective_date
+                )
+            """).fetchall()
+            
+            if orphaned:
+                logging.info(f"Found {len(orphaned)} orphaned processed entries with no rate data")
+                
+                # Delete the orphaned entries
+                self.conn.execute("BEGIN TRANSACTION")
+                for entry in orphaned:
+                    self.conn.execute("""
+                        DELETE FROM processed_data
+                        WHERE state = ? AND naic = ? AND effective_date = ?
+                    """, entry)
+                self.conn.execute("COMMIT")
+                    
+                logging.info(f"Cleaned up {len(orphaned)} orphaned processed entries")
+                
+            # Also check for orphaned region records that have no rate data
+            orphaned_regions = self.conn.execute("""
+                SELECT rr.region_id
+                FROM rate_regions rr
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM rate_store rs
+                    WHERE rs.region_id = rr.region_id
+                )
+            """).fetchall()
+            
+            if orphaned_regions:
+                logging.info(f"Found {len(orphaned_regions)} orphaned region entries with no rate data")
+                
+                # We won't automatically delete them, just log for manual review
+                with open(f'orphaned_regions_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log', 'w') as f:
+                    for region in orphaned_regions:
+                        f.write(f"{region[0]}\n")
+                
+        except Exception as e:
+            logging.error(f"Error cleaning up orphaned entries: {str(e)}")
+            
+    def check_database_integrity(self):
+        """Verify database integrity by checking relationships between tables."""
+        try:
+            logging.info("Checking database integrity...")
+            
+            # Check 1: All region_ids in rate_store exist in rate_regions
+            missing_regions = self.conn.execute("""
+                SELECT DISTINCT rs.region_id
+                FROM rate_store rs
+                LEFT JOIN rate_regions rr ON rs.region_id = rr.region_id
+                WHERE rr.region_id IS NULL
+            """).fetchall()
+            
+            if missing_regions:
+                logging.error(f"Found {len(missing_regions)} region IDs in rate_store that don't exist in rate_regions")
+            
+            # Check 2: All region_ids in region_mapping exist in rate_regions
+            missing_mapped_regions = self.conn.execute("""
+                SELECT DISTINCT rm.region_id
+                FROM region_mapping rm
+                LEFT JOIN rate_regions rr ON rm.region_id = rr.region_id
+                WHERE rr.region_id IS NULL
+            """).fetchall()
+            
+            if missing_mapped_regions:
+                logging.error(f"Found {len(missing_mapped_regions)} region IDs in region_mapping that don't exist in rate_regions")
+            
+            # Check 3: All NAICs in rate_store exist in carrier_info
+            missing_carriers = self.conn.execute("""
+                SELECT DISTINCT rs.naic
+                FROM rate_store rs
+                LEFT JOIN carrier_info ci ON rs.naic = ci.naic
+                WHERE ci.naic IS NULL
+            """).fetchall()
+            
+            if missing_carriers:
+                logging.error(f"Found {len(missing_carriers)} NAICs in rate_store that don't exist in carrier_info")
+                
+            # Check 4: Count records in each table
+            rate_count = self.conn.execute("SELECT COUNT(*) FROM rate_store").fetchone()[0]
+            region_count = self.conn.execute("SELECT COUNT(*) FROM rate_regions").fetchone()[0]
+            mapping_count = self.conn.execute("SELECT COUNT(*) FROM region_mapping").fetchone()[0]
+            carrier_count = self.conn.execute("SELECT COUNT(*) FROM carrier_info").fetchone()[0]
+            processed_count = self.conn.execute("SELECT COUNT(*) FROM processed_data").fetchone()[0]
+            
+            logging.info(f"Database contains: {rate_count} rates, {region_count} regions, " +
+                        f"{mapping_count} ZIP mappings, {carrier_count} carriers, {processed_count} processed combinations")
+            
+            if rate_count == 0 or region_count == 0 or mapping_count == 0:
+                logging.error("One or more tables are empty - database may be corrupted")
+                
+            # All checks passed
+            if not (missing_regions or missing_mapped_regions or missing_carriers):
+                logging.info("Database integrity check passed")
+                return True
+            else:
+                logging.error("Database integrity check failed - see previous errors")
+                return False
+                
+        except Exception as e:
+            logging.error(f"Error checking database integrity: {str(e)}")
+            return False
+    
+    async def get_available_carriers(self, state: str, effective_date: str) -> Set[str]:
+        """Get all available carriers in a state with a single API call."""
+        try:
+            # Get a sample ZIP code for the state
+            state_zips = self.zip_holder.lookup_zips_by_state(state)
+            if not state_zips:
+                logging.error(f"No ZIP codes found for state {state}")
+                return set()
+                
+            sample_zip = state_zips[0]
+            
+            # Prepare parameters for a sample quote (without specifying NAIC)
+            params = {
+                "zip5": sample_zip,
+                "effective_date": effective_date,
+                "age": 65,
+                "gender": "M",
+                "tobacco": 0,
+                "plan": "G"
+            }
+            
+            # Special plan handling for certain states
+            if state == 'MN':
+                params['plan'] = 'MN_BASIC'
+            elif state == 'WI':
+                params['plan'] = 'WIR_A50%'
+            elif state == 'MA':
+                params['plan'] = 'MA_CORE'
+            
+            # Make the API call without specifying any NAIC
+            response = await self.cr.fetch_quote(**params)
+            
+            # Extract all unique NAIC codes from the response
+            available_naics = set()
+            for quote in response:
+                naic = quote.get('company_base', {}).get('naic')
+                company_name = quote.get('company_base', {}).get('name')
+                if naic:
+                    available_naics.add(naic)
+                    # Store carrier info
+                    self.conn.execute(
+                        "INSERT OR REPLACE INTO carrier_info (naic, company_name, selected) VALUES (?, ?, 1)",
+                        (naic, company_name)
+                    )
+            
+            logging.info(f"Found {len(available_naics)} available carriers in {state}: {available_naics}")
+            return available_naics
+            
+        except Exception as e:
+            logging.error(f"Error getting available carriers for state {state}: {str(e)}")
+            return set()
+    
+    async def get_rate_regions(self, state: str, naic: str) -> Tuple[List[Set[str]], str]:
+        """
+        Get the geographic regions for a carrier in a state.
+        Returns a list of sets (each set contains locations in a region) and the mapping type (zip5 or county).
+        """
+        try:
+            lookup_list, mapping_type = await self.cr.calc_naic_map_combined2(state, naic)
+            if len(lookup_list) == 0:
+                logging.warning(f"No regions found for {naic} in {state}")
+                return [], ""
+            
+            logging.info(f"Found {len(lookup_list)} regions for {naic} in {state} (type: {mapping_type})")
+            return lookup_list, mapping_type
+            
+        except Exception as e:
+            logging.error(f"Error getting regions for {naic} in {state}: {str(e)}")
+            return [], ""
+    
+    def get_representative_zip(self, state: str, region: Set[str], mapping_type: str) -> str:
+        """Get a representative ZIP code for a region."""
+        if mapping_type == "zip5":
+            # If region is ZIP-based, just pick the first ZIP
+            return next(iter(region))
+        else:
+            # If region is county-based, get a ZIP code from each county
+            for county in region:
+                zips = self.zip_holder.lookup_zip_by_county(state, county)
+                if zips:
+                    return zips[0]
+            
+            # Fallback
+            logging.warning(f"No ZIP found for counties {region} in {state}")
+            return ""
+    
+    def get_all_zips_for_region(self, state: str, region: Set[str], mapping_type: str) -> List[str]:
+        """Get all ZIP codes for a region."""
+        if mapping_type == "zip5":
+            # If region is ZIP-based, return all ZIPs in the region
+            return list(region)
+        else:
+            # If region is county-based, get all ZIPs for each county
+            all_zips = []
+            for county in region:
+                county_zips = self.zip_holder.lookup_zip_by_county(state, county)
+                all_zips.extend(county_zips)
+            return all_zips
+    
+    def process_quote(self, quote: Dict, region_id: str, state: str) -> List[Dict]:
+        """Process a quote response into rate records."""
+        filtered = filter_quote(quote)
+        if not filtered:
+            return []
+        
+        gender = filtered['gender']
+        tobacco = filtered['tobacco']
+        age = filtered['age']
+        plan = filtered['plan']
+        base_rate = filtered['rate']
+        naic = filtered.get('company_base', {}).get('naic', quote.get('company_base', {}).get('naic'))
+        
+        # Use the effective date from the API response
+        effective_date = filtered.get('effective_date', quote.get('effective_date'))
+        
+        # Calculate rates for different ages using age_increases
+        rate_mults = [1.0] + [x + 1 for x in filtered.get('age_increases', [])]
+        try:
+            discount_mult = (1 - filtered.get('discounts', [{}])[0].get('value', 0))
+        except:
+            discount_mult = 1
+            
+        ages = [age + i for i in range(len(rate_mults))]
+        
+        results = []
+        for i, current_age in enumerate(ages):
+            rate_value = round(base_rate * reduce(lambda x, y: x * y, rate_mults[:i + 1]), 2)
+            discount_value = round(discount_mult * rate_value, 2)
+            
+            results.append({
+                'region_id': region_id,
+                'gender': gender,
+                'tobacco': int(tobacco),
+                'age': current_age,
+                'naic': naic,
+                'plan': plan,
+                'rate': rate_value,
+                'discount_rate': discount_value,
+                'effective_date': effective_date,
+                'state': state
+            })
+            
+        return results
+    
+    async def fetch_rates(self, state: str, naic: str, region_id: str, representative_zip: str, effective_date: str) -> List[Dict]:
+        """Fetch rates for all demographics for a specific region."""
+        try:
+            # Generate all demographic combinations
+            tobacco_options = [0, 1]
+            gender_options = ["M", "F"]
+            
+            # Select plan options based on state
+            if state == 'MA':
+                plan_options = ['MA_CORE', 'MA_SUPP1']
+            elif state == 'MN':
+                plan_options = ['MN_BASIC', 'MN_EXTB']
+            elif state == 'WI':
+                plan_options = ['WIR_A50%']
+            else:
+                plan_options = ['N', 'G', 'F']
+            
+            # Generate combinations for key ages (65, 70, 75, etc.), then use rate multipliers for ages in between
+            base_ages = [65, 70, 75, 80, 85, 90, 95]
+            
+            results = []
+            
+            # Process one plan at a time to reduce connection load
+            for plan in plan_options:
+                plan_tasks = []
+                
+                # Create tasks for parallel API calls with controlled concurrency
+                for gender, tobacco, base_age in itertools.product(gender_options, tobacco_options, base_ages):
+                    async def fetch_and_process(gender, tobacco, plan, age):
+                        async with self.demographic_semaphore:
+                            async with GLOBAL_SEMAPHORE:
+                                params = {
+                                    "zip5": representative_zip,
+                                    "naic": naic,
+                                    "gender": gender,
+                                    "tobacco": tobacco,
+                                    "age": age,
+                                    "plan": plan,
+                                    "effective_date": effective_date
+                                }
+                                
+                                try:
+                                    # Fetch quote from API
+                                    response = await self.cr.fetch_quote(**params)
+                                    
+                                    # Process response
+                                    combo_results = []
+                                    for quote in response:
+                                        if quote.get('company_base', {}).get('naic') == naic:
+                                            processed_rates = self.process_quote(quote, region_id, state)
+                                            combo_results.extend(processed_rates)
+                                    
+                                    return combo_results
+                                except Exception as e:
+                                    logging.error(f"Error fetching rates for {naic}/{gender}/{tobacco}/{plan}/{age}: {str(e)}")
+                                    return []
+                
+                    task = asyncio.create_task(fetch_and_process(gender, tobacco, plan, base_age))
+                    plan_tasks.append(task)
+                
+                # Wait for all tasks for this plan to complete
+                for completed_task in asyncio.as_completed(plan_tasks):
+                    try:
+                        combo_results = await completed_task
+                        results.extend(combo_results)
+                    except Exception as e:
+                        logging.error(f"Task completion error: {str(e)}")
+            
+            return results
+            
+        except Exception as e:
+            logging.error(f"Error fetching rates for {naic} in {state} at {representative_zip}: {str(e)}")
+            return []
+    
+    def save_rates(self, rates: List[Dict]):
+        """Save rates to the database in batches, avoiding duplicates based on the primary key."""
+        if not rates:
+            logging.info("No rates to save.")
+            return
+        
+        # Extract values for batch insert
+        rows = [
+            (r['region_id'], r['gender'], r['tobacco'], r['age'], r['naic'], 
+             r['plan'], r['rate'], r['discount_rate'], r['effective_date'], r['state'])
+            for r in rates
+        ]
+        
+        batch_size = 500  # Using reasonable batch size for better performance
+        inserted_count = 0
+        skipped_count = 0
+        error_count = 0
+        correction_log_file = f'rate_corrections_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+        
+        # Create a temporary table to handle bulk inserts and duplicate checking
+        try:
+            # Create a temp table with the same structure as rate_store
+            self.conn.execute("""
+                CREATE TEMP TABLE IF NOT EXISTS temp_rates (
+                    region_id TEXT,
+                    gender TEXT,
+                    tobacco INTEGER,
+                    age INTEGER,
+                    naic TEXT,
+                    plan TEXT,
+                    rate FLOAT,
+                    discount_rate FLOAT,
+                    effective_date TEXT,
+                    state TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Process batches
+            for i in range(0, len(rows), batch_size):
+                batch = rows[i:i+batch_size]
+                batch_inserted = 0
+                batch_skipped = 0
+                
+                try:
+                    # Begin transaction for this batch
+                    self.conn.execute("BEGIN TRANSACTION")
+                    
+                    # Clear temporary table
+                    self.conn.execute("DELETE FROM temp_rates")
+                    
+                    # Insert batch into temporary table
+                    self.conn.executemany("""
+                        INSERT INTO temp_rates 
+                        (region_id, gender, tobacco, age, naic, plan, rate, discount_rate, effective_date, state)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, batch)
+                    
+                    # Find existing records that would conflict
+                    existing_records = self.conn.execute("""
+                        SELECT r.region_id, r.gender, r.tobacco, r.age, r.naic, r.plan, 
+                               r.rate, r.discount_rate, r.effective_date, r.state, t.rate, t.discount_rate
+                        FROM rate_store r
+                        JOIN temp_rates t ON 
+                            r.region_id = t.region_id AND
+                            r.gender = t.gender AND
+                            r.tobacco = t.tobacco AND
+                            r.age = t.age AND
+                            r.naic = t.naic AND
+                            r.plan = t.plan AND
+                            r.effective_date = t.effective_date AND
+                            r.state = t.state
+                    """).fetchall()
+                    
+                    # Log potential corrections
+                    for record in existing_records:
+                        old_rate, old_discount = record[6], record[7]
+                        new_rate, new_discount = record[10], record[11]
+                        
+                        if old_rate != new_rate or old_discount != new_discount:
+                            # Log rate correction
+                            with open(correction_log_file, 'a') as f:
+                                f.write(
+                                    f"{datetime.now()}: Potential rate correction for NAIC {record[4]}, "
+                                    f"Plan {record[5]}, Effective Date {record[8]}, State {record[9]}: "
+                                    f"Stored Rate ${old_rate:.2f} -> New Rate ${new_rate:.2f}, "
+                                    f"Stored Discount ${old_discount:.2f} -> New Discount ${new_discount:.2f}\n"
+                                )
+                        
+                        batch_skipped += 1
+                    
+                    # Insert records that don't exist in rate_store using a NOT EXISTS subquery
+                    inserted = self.conn.execute("""
+                        INSERT INTO rate_store 
+                        (region_id, gender, tobacco, age, naic, plan, rate, discount_rate, effective_date, state)
+                        SELECT t.region_id, t.gender, t.tobacco, t.age, t.naic, t.plan, 
+                               t.rate, t.discount_rate, t.effective_date, t.state
+                        FROM temp_rates t
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM rate_store r
+                            WHERE r.region_id = t.region_id AND
+                                  r.gender = t.gender AND
+                                  r.tobacco = t.tobacco AND
+                                  r.age = t.age AND
+                                  r.naic = t.naic AND
+                                  r.plan = t.plan AND
+                                  r.effective_date = t.effective_date AND
+                                  r.state = t.state
+                        )
+                    """)
+                    
+                    # Get number of rows inserted
+                    batch_inserted = self.conn.execute("SELECT changes()").fetchone()[0]
+                    inserted_count += batch_inserted
+                    skipped_count += batch_skipped
+                    
+                    # Commit transaction
+                    self.conn.execute("COMMIT")
+                    
+                    logging.info(
+                        f"Batch {i//batch_size + 1}/{(len(rows) + batch_size - 1) // batch_size}: "
+                        f"Inserted {batch_inserted}, skipped {batch_skipped} records"
+                    )
+                    
+                except Exception as e:
+                    self.conn.execute("ROLLBACK")
+                    error_count += 1
+                    logging.error(f"Error in batch {i//batch_size + 1}: {str(e)}")
+                    
+                    # If too many errors, abort
+                    if error_count > 5:
+                        logging.error("Too many errors, aborting rate insertion")
+                        break
+            
+            # Clean up temp table
+            self.conn.execute("DROP TABLE IF EXISTS temp_rates")
+            
+        except Exception as e:
+            logging.error(f"Fatal error in save_rates: {str(e)}")
+            try:
+                self.conn.execute("ROLLBACK")
+                self.conn.execute("DROP TABLE IF EXISTS temp_rates")
+            except:
+                pass
+            return
+        
+        # Verify data was saved by checking counts
+        verification_count = self.conn.execute(
+            """SELECT COUNT(*) FROM rate_store 
+               WHERE naic = ? AND effective_date = ?""", 
+            (rates[0]['naic'], rates[0]['effective_date'])
+        ).fetchone()[0]
+        
+        if verification_count == 0:
+            logging.error(f"No rates were saved for {rates[0]['naic']} on {rates[0]['effective_date']}")
+        else:
+            logging.info(
+                f"Completed processing {len(rates)} potential rate records: "
+                f"{inserted_count} inserted, {skipped_count} skipped, {verification_count} total in database"
+            )
+            
+        if skipped_count > 0 and os.path.exists(correction_log_file):
+            logging.info(f"Check {correction_log_file} for potential rate corrections.")
+    
+    def mark_processed(self, state: str, naic: str, effective_date: str, success: bool, api_effective_date: str = None):
+        """Mark a carrier-state-date combination as processed."""
+        try:
+            # Check if api_effective_date column exists
+            try:
+                self.conn.execute("""
+                    INSERT OR REPLACE INTO processed_data 
+                    (state, naic, effective_date, api_effective_date, processed_at, success)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (state, naic, effective_date, api_effective_date or effective_date, datetime.now(), success))
+            except Exception as col_error:
+                if "api_effective_date" in str(col_error):
+                    # Insert without the api_effective_date column
+                    self.conn.execute("""
+                        INSERT OR REPLACE INTO processed_data 
+                        (state, naic, effective_date, processed_at, success)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (state, naic, effective_date, datetime.now(), success))
                 else:
-                    cursor.execute(operation['query'])
-        db_connection.commit()
+                    raise col_error
+        except Exception as e:
+            logging.error(f"Error marking processed: {str(e)}")
+    
+    def is_already_processed(self, state: str, naic: str, effective_date: str) -> bool:
+        """Check if a carrier-state-date combination has already been processed successfully."""
+        # First check if it's marked as processed
+        result = self.conn.execute("""
+            SELECT success FROM processed_data 
+            WHERE state = ? AND naic = ? AND effective_date = ? AND success = true
+        """, (state, naic, effective_date)).fetchone()
+        
+        if not result:
+            return False
+            
+        # Also verify that we actually have rate data stored
+        rate_count = self.conn.execute("""
+            SELECT COUNT(*) FROM rate_store r 
+            JOIN region_mapping m ON r.region_id = m.region_id AND r.naic = m.naic
+            WHERE r.naic = ? AND r.state = ? AND r.effective_date = ?
+            LIMIT 1
+        """, (naic, state, effective_date)).fetchone()[0]
+        
+        # Only consider it processed if we have actual rate data
+        return rate_count > 0
+    
+    def save_region_data(self, state: str, naic: str, regions: List[Set[str]], mapping_type: str) -> List[str]:
+        """
+        Save region data to database and return list of region IDs.
+        This handles both creating the region entries and mapping ZIP codes to regions.
+        """
+        region_ids = []
+        
+        try:
+            # Begin transaction to ensure all regions and mappings are saved together
+            self.conn.execute("BEGIN TRANSACTION")
+            
+            for region in regions:
+                # Generate a unique region ID
+                region_id = str(uuid.uuid4())
+                region_ids.append(region_id)
+                
+                # Convert region data (set of strings) to JSON
+                region_data = json.dumps(list(region))
+                
+                # Save region metadata - using INSERT OR REPLACE to handle cases where the region already exists
+                self.conn.execute("""
+                    INSERT OR REPLACE INTO rate_regions 
+                    (region_id, naic, state, mapping_type, region_data)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (region_id, naic, state, mapping_type, region_data))
+                
+                # Get all zip codes for this region and map them to the region ID
+                zip_codes = self.get_all_zips_for_region(state, region, mapping_type)
+                
+                # Create ZIP code to region mapping
+                zip_mappings = [(zip_code, region_id, naic) for zip_code in zip_codes]
+                
+                # Use batch inserts with a reasonable batch size to avoid excessive memory usage
+                batch_size = 500
+                for i in range(0, len(zip_mappings), batch_size):
+                    batch = zip_mappings[i:i+batch_size]
+                    self.conn.executemany("""
+                        INSERT OR REPLACE INTO region_mapping
+                        (zip_code, region_id, naic)
+                        VALUES (?, ?, ?)
+                    """, batch)
+                
+                logging.info(f"Mapped {len(zip_mappings)} ZIP codes to region {region_id} for {naic} in {state}")
+            
+            # Verify region data was saved properly
+            saved_regions_count = self.conn.execute(
+                "SELECT COUNT(*) FROM rate_regions WHERE naic = ? AND state = ?", 
+                (naic, state)
+            ).fetchone()[0]
+            
+            if saved_regions_count < len(regions):
+                logging.error(f"Region verification failed: Expected at least {len(regions)} regions, got {saved_regions_count}")
+                self.conn.execute("ROLLBACK")
+                return []
+            
+            # Verify mappings were saved properly (at least some mappings should exist)
+            mapping_count = self.conn.execute(
+                "SELECT COUNT(*) FROM region_mapping WHERE naic = ? AND region_id IN " + 
+                f"({','.join(['?'] * len(region_ids))})",
+                (naic, *region_ids)
+            ).fetchone()[0]
+            
+            if mapping_count == 0:
+                logging.error(f"Mapping verification failed: No mappings were created")
+                self.conn.execute("ROLLBACK")
+                return []
+            
+            # Commit the transaction only if everything was verified
+            self.conn.execute("COMMIT")
+            return region_ids
+            
+        except Exception as e:
+            self.conn.execute("ROLLBACK")
+            logging.error(f"Error saving region data: {str(e)}")
+            return []
+    
+    async def process_carrier_state(self, state: str, naic: str, effective_date: str, dry_run: bool = False) -> bool:
+        """Process a specific carrier-state combination for an effective date."""
+        try:
+            # Check if already processed
+            if self.is_already_processed(state, naic, effective_date):
+                logging.info(f"Skipping already processed: {state}/{naic}/{effective_date}")
+                return True
+                
+            if dry_run:
+                logging.info(f"Dry run: would process {state}/{naic}/{effective_date}")
+                return True
+                
+            logging.info(f"Processing {state}/{naic}/{effective_date}")
+            
+            # Check if we have existing regions for this carrier-state combination
+            existing_regions = self.conn.execute("""
+                SELECT region_id, region_data, mapping_type 
+                FROM rate_regions 
+                WHERE naic = ? AND state = ?
+            """, (naic, state)).fetchall()
+            
+            # If we have existing regions, reuse them instead of creating new ones
+            if existing_regions:
+                logging.info(f"Reusing {len(existing_regions)} existing regions for {naic} in {state}")
+                region_ids = [row[0] for row in existing_regions]
+                
+                # Verify region mappings exist
+                mapping_count = self.conn.execute(f"""
+                    SELECT COUNT(*) FROM region_mapping 
+                    WHERE naic = ? AND region_id IN ({','.join(['?'] * len(region_ids))})
+                """, [naic] + region_ids).fetchone()[0]
+                
+                if mapping_count == 0:
+                    logging.error(f"No region mappings found for {naic} in {state} despite existing regions")
+                    return False
+                
+                # Use existing regions with their mapping data
+                regions = []
+                mapping_type = ""
+                for row in existing_regions:
+                    region_id, region_data_json, region_mapping_type = row
+                    try:
+                        region_data = set(json.loads(region_data_json))
+                        regions.append(region_data)
+                        mapping_type = region_mapping_type
+                    except Exception as e:
+                        logging.error(f"Error parsing region data: {str(e)}")
+            
+            else:
+                # Get geographic regions for this carrier-state (only if we don't have existing ones)
+                regions, mapping_type = await self.get_rate_regions(state, naic)
+                if not regions:
+                    logging.warning(f"No regions found for {naic} in {state}")
+                    self.mark_processed(state, naic, effective_date, False)
+                    return False
+                
+                # Save region data to database and get region IDs
+                region_ids = self.save_region_data(state, naic, regions, mapping_type)
+                if not region_ids:
+                    logging.error(f"Failed to save region data for {naic} in {state}")
+                    self.mark_processed(state, naic, effective_date, False)
+                    return False
+                
+                # Verify region mappings exist
+                mapping_count = self.conn.execute(f"""
+                    SELECT COUNT(*) FROM region_mapping 
+                    WHERE naic = ? AND region_id IN ({','.join(['?'] * len(region_ids))})
+                """, [naic] + region_ids).fetchone()[0]
+                
+                if mapping_count == 0:
+                    logging.error(f"No region mappings found for {naic} in {state} after save")
+                    self.mark_processed(state, naic, effective_date, False)
+                    return False
+            
+            # Process each region in batches with controlled concurrency
+            all_rates = []
+            batch_size = 5  # Process 5 regions at a time
+            
+            for i in range(0, len(regions), batch_size):
+                batch_regions = regions[i:i+batch_size]
+                batch_region_ids = region_ids[i:i+batch_size]
+                current_tasks = []
+                
+                for region_index, (region, region_id) in enumerate(zip(batch_regions, batch_region_ids)):
+                    # Get a representative ZIP for this region
+                    rep_zip = self.get_representative_zip(state, region, mapping_type)
+                    if not rep_zip:
+                        logging.warning(f"Could not find representative ZIP for region {region_index+1}")
+                        continue
+                    
+                    # Create task for fetching rates for this region
+                    async with self.region_semaphore:
+                        task = asyncio.create_task(self.fetch_rates(
+                            state, naic, region_id, rep_zip, effective_date
+                        ))
+                        current_tasks.append((task, region_id, region_index))
+                
+                # Process fetched rates as they complete
+                for task_data in current_tasks:
+                    task, region_id, region_index = task_data
+                    try:
+                        # Wait for this region's rates
+                        region_rates = await task
+                        
+                        if not region_rates:
+                            logging.warning(f"No rates returned for {naic} in {state} for region {region_id}")
+                            continue
+                        
+                        logging.info(f"Processing rates for region {region_index+1}/{len(regions)} with {len(region_rates)} rate records")
+                        all_rates.extend(region_rates)
+                        
+                        # Save rates in batches to avoid memory issues
+                        if len(all_rates) >= 50000:
+                            self.save_rates(all_rates)
+                            all_rates = []
+                    
+                    except Exception as region_error:
+                        logging.error(f"Error processing region {region_index+1} for {naic} in {state}: {str(region_error)}")
+                        continue  # Continue with other regions
+                
+                # Save after each batch to free memory
+                if all_rates:
+                    self.save_rates(all_rates)
+                    all_rates = []
+            
+            # Save any remaining rates
+            if all_rates:
+                self.save_rates(all_rates)
+            
+            # Verify rates were actually saved
+            rate_count = self.conn.execute("""
+                SELECT COUNT(*) FROM rate_store 
+                WHERE naic = ? AND state = ? AND effective_date = ?
+            """, (naic, state, effective_date)).fetchone()[0]
+            
+            if rate_count == 0:
+                logging.error(f"No rates were saved for {naic} in {state} on {effective_date}")
+                self.mark_processed(state, naic, effective_date, False)
+                return False
+            
+            # Mark as processed
+            self.mark_processed(state, naic, effective_date, True)
+            logging.info(f"Successfully processed {state}/{naic}/{effective_date} with {rate_count} rates")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error processing {state}/{naic}/{effective_date}: {str(e)}")
+            self.mark_processed(state, naic, effective_date, False)
+            return False
+    
+    async def build_database(self, states: List[str], selected_naics: List[str], effective_dates: List[str], dry_run: bool = False, spot_check: bool = True):
+        """
+        Build the database for specified states, carriers, and dates.
+        
+        Uses the natural effective dates from the API responses rather than copying rates forward.
+        """
+        # Initialize API client
+        await self.cr.async_init()
+        await self.cr.fetch_token()
+        
+        # Initialize spot checker
+        await self.spot_checker.init()
+        
+        if len(effective_dates) == 0:
+            logging.error("No effective dates provided")
+            return
+            
+        # If spot checking is enabled, we'll only fully process the first month
+        if spot_check and len(effective_dates) > 1:
+            first_month = effective_dates[0]
+            logging.info(f"Processing first month ({first_month}) fully, then checking last month for changes")
+            
+            # Process first month fully for all states
+            await self._process_first_month(states, selected_naics, first_month, dry_run)
+            
+            # Now use spot checker for the final month, only adding entries if rates changed
+            if not dry_run:
+                # Create process function that will be called for carriers with rate changes
+                async def process_carrier_with_changes(state: str, naic: str, effective_date: str) -> bool:
+                    return await self.process_carrier_state(state, naic, effective_date, False)
+                
+                # Check for rate changes between first and last month
+                await self.spot_checker.process_all_states_months(
+                    states, effective_dates, process_carrier_with_changes
+                )
+        else:
+            # Process all months fully (original behavior)
+            # Process states in smaller groups to control total number of concurrent operations
+            state_batch_size = 2  # Process 2 states at a time
+            
+            for i in range(0, len(states), state_batch_size):
+                state_batch = states[i:i+state_batch_size]
+                state_tasks = []
+                
+                # Create a task for each state in the current batch
+                for state in state_batch:
+                    task = asyncio.create_task(self._process_state(state, selected_naics, effective_dates, dry_run))
+                    state_tasks.append((task, state))
+                
+                # Wait for all states in this batch to complete
+                for task_data in state_tasks:
+                    task, state = task_data
+                    try:
+                        await task
+                    except Exception as e:
+                        logging.error(f"Error processing state {state}: {str(e)}")
+        
+        logging.info("Database build completed")
+    
+    async def _process_first_month(self, states: List[str], selected_naics: List[str], effective_date: str, dry_run: bool = False):
+        """Process just the first month fully for all states."""
+        # Process states in smaller groups to control total number of concurrent operations
+        state_batch_size = 2  # Process 2 states at a time
+        
+        for i in range(0, len(states), state_batch_size):
+            state_batch = states[i:i+state_batch_size]
+            state_tasks = []
+            
+            # Create a task for each state in the current batch
+            for state in state_batch:
+                task = asyncio.create_task(
+                    self._process_state(state, selected_naics, [effective_date], dry_run)
+                )
+                state_tasks.append((task, state))
+            
+            # Wait for all states in this batch to complete
+            for task_data in state_tasks:
+                task, state = task_data
+                try:
+                    await task
+                except Exception as e:
+                    logging.error(f"Error processing state {state}: {str(e)}")
+        
+        logging.info(f"First month ({effective_date}) processing completed")
+    
+    async def _process_state(self, state: str, selected_naics: List[str], effective_dates: List[str], dry_run: bool = False):
+        """Process all carriers for a single state."""
+        try:
+            logging.info(f"Processing state: {state}")
+            
+            # Get available carriers for this state
+            available_carriers = await self.get_available_carriers(state, effective_dates[0])
+            if not available_carriers:
+                logging.warning(f"No carriers available for {state}")
+                return
+            
+            # Filter carriers based on selected NAICs
+            carriers_to_process = [n for n in selected_naics if n in available_carriers]
+            logging.info(f"Processing {len(carriers_to_process)}/{len(available_carriers)} carriers in {state}")
+            
+            # Process carriers in batches to prevent too many open files
+            carrier_batch_size = 3  # Process 3 carriers at a time
+            
+            for i in range(0, len(carriers_to_process), carrier_batch_size):
+                carrier_batch = carriers_to_process[i:i+carrier_batch_size]
+                
+                # Create a semaphore to limit concurrency within this carrier batch
+                batch_semaphore = asyncio.Semaphore(len(carrier_batch) * len(effective_dates))
+                
+                async def process_with_semaphore(state, naic, effective_date):
+                    async with batch_semaphore:
+                        return await self.process_carrier_state(state, naic, effective_date, dry_run)
+                
+                # Create tasks for this batch of carriers
+                batch_tasks = []
+                for naic in carrier_batch:
+                    for effective_date in effective_dates:
+                        task = asyncio.create_task(
+                            process_with_semaphore(state, naic, effective_date)
+                        )
+                        batch_tasks.append((task, naic, effective_date))
+                
+                # Wait for all tasks in this batch to complete
+                for task_data in batch_tasks:
+                    task, naic, effective_date = task_data
+                    try:
+                        success = await task
+                        if not success:
+                            logging.warning(f"Failed to process {state}/{naic}/{effective_date}")
+                    except Exception as task_error:
+                        logging.error(f"Error in task for {state}/{naic}/{effective_date}: {str(task_error)}")
+                
+                # Allow some time between batches for resources to be released
+                await asyncio.sleep(1)
+        except Exception as e:
+            logging.error(f"Error processing state {state}: {str(e)}")
+    
+    def get_rate_by_zip(self, zip_code: str, gender: str, tobacco: int, age: int, effective_date: str) -> List[Dict]:
+        """
+        Get rates for all carriers for specific demographic at a ZIP code.
+        This is a convenience method for external use.
+        """
+        try:
+            result = self.conn.execute("""
+                SELECT r.naic, c.company_name, r.plan, r.rate, r.discount_rate
+                FROM rate_store r
+                JOIN region_mapping m ON r.region_id = m.region_id AND r.naic = m.naic
+                LEFT JOIN carrier_info c ON r.naic = c.naic
+                WHERE m.zip_code = ? 
+                  AND r.gender = ?
+                  AND r.tobacco = ?
+                  AND r.age = ?
+                  AND r.effective_date = ?
+                ORDER BY r.naic, r.plan
+            """, [zip_code, gender, tobacco, age, effective_date]).fetchall()
+            
+            return [
+                {
+                    "naic": row[0],
+                    "company_name": row[1] or "Unknown",
+                    "plan": row[2],
+                    "rate": row[3],
+                    "discount_rate": row[4]
+                }
+                for row in result
+            ]
+            
+        except Exception as e:
+            logging.error(f"Error getting rates for {zip_code}: {str(e)}")
+            return []
+    
+    def optimize_database(self):
+        """Run optimizations on the database."""
+        logging.info("Running database optimizations...")
+        
+        # Vacuum the database
+        self.conn.execute("VACUUM")
+        
+        # Run analyze to update statistics
+        self.conn.execute("ANALYZE")
+        
+        logging.info("Database optimization complete")
+    
+    def close(self):
+        """Close the database connection and clean up resources."""
+        if hasattr(self, 'conn') and self.conn:
+            try:
+                logging.info("Running database optimizations...")
+                # Vacuum the database
+                self.conn.execute("VACUUM")
+                
+                # Run analyze to update statistics
+                self.conn.execute("ANALYZE")
+                
+                logging.info("Database optimization complete")
+                
+                # Close DuckDB connection
+                self.conn.close()
+                logging.info("Database connection closed")
+            except Exception as e:
+                logging.error(f"Error during database close: {str(e)}")
+                
+        # Close spot checker connection
+        if hasattr(self, 'spot_checker') and self.spot_checker:
+            try:
+                self.spot_checker.close()
+                logging.info("Spot checker connection closed")
+            except Exception as e:
+                logging.error(f"Error closing spot checker: {str(e)}")
+                
+        # Close any HTTP clients
+        if hasattr(self, 'cr') and self.cr:
+            try:
+                if hasattr(self.cr, 'http_client') and self.cr.http_client:
+                    self.cr.http_client.close()
+                    logging.info("HTTP client connections closed")
+            except Exception as e:
+                logging.error(f"Error closing HTTP client: {str(e)}")
+
+
+class RateSpotChecker:
+    def __init__(self, db_path: str):
+        """Initialize the rate spot checker with database connection."""
+        self.db_path = db_path
+        self.conn = duckdb.connect(db_path)
+        self.cr = None
+        self.semaphore = None
+        self.notification_file = f'rate_change_notifications_{datetime.now().strftime("%Y%m%d")}.md'
+        
+    async def init(self):
+        """Initialize the API client and semaphore."""
+        self.cr = csg(Config.API_KEY)
+        await self.cr.async_init()
+        await self.cr.fetch_token()
+        self.semaphore = asyncio.Semaphore(20)  # Limit concurrent checks
+        
+        # Initialize notification file
+        with open(self.notification_file, 'w') as f:
+            f.write(f"# Medicare Rate Change Notifications\n\n")
+            f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write("## Rate Changes Detected\n\n")
+        
+    async def check_carrier_rates(self, state: str, naic: str, previous_date: str, 
+                                 current_date: str) -> bool:
+        """
+        Check if rates have changed between two effective dates for a carrier.
+        
+        Returns True if rates have changed and need to be updated.
+        """
+        try:
+            async with self.semaphore:
+                # Get a sample ZIP code for the state
+                state_zips = zipHolder("static/uszips.csv").lookup_zips_by_state(state)
+                if not state_zips:
+                    logging.error(f"No ZIP codes found for state {state}")
+                    return False
+                    
+                sample_zip = state_zips[0]
+                
+                # Sample demographic combinations to check
+                # Using 65-year-old male, non-smoker as a baseline check
+                demo = {
+                    "zip5": sample_zip,
+                    "age": 65,
+                    "gender": "M", 
+                    "tobacco": 0,
+                    "naic": naic
+                }
+                
+                # Select appropriate plans based on state
+                if state == 'MA':
+                    plans = ['MA_CORE']
+                elif state == 'MN':
+                    plans = ['MN_BASIC']
+                elif state == 'WI':
+                    plans = ['WIR_A50%']
+                else:
+                    plans = ['G', 'N']  # Just check common plans G and N
+                
+                # Compare rates between dates
+                has_changes = False
+                changes_details = []
+                
+                for plan in plans:
+                    # Check previous date
+                    prev_params = {**demo, "plan": plan, "effective_date": previous_date}
+                    prev_response = await self.cr.fetch_quote(**prev_params)
+                    
+                    # Check current date
+                    curr_params = {**demo, "plan": plan, "effective_date": current_date}
+                    curr_response = await self.cr.fetch_quote(**curr_params)
+                    
+                    # Extract rates for comparison
+                    prev_rates = self._extract_rates(prev_response, naic)
+                    curr_rates = self._extract_rates(curr_response, naic)
+                    
+                    # Log details for debugging
+                    logging.info(f"Rate check: {state}/{naic}/{plan} - Previous query date: {previous_date}, Current query date: {current_date}")
+                    
+                    # Compare rates - detect any rate change
+                    if prev_rates and curr_rates:
+                        # Check if rates are different (ignoring the effective dates)
+                        if prev_rates[0]['rate'] != curr_rates[0]['rate']:
+                            percent_change = ((curr_rates[0]['rate'] - prev_rates[0]['rate']) / prev_rates[0]['rate']) * 100 if prev_rates[0]['rate'] != 0 else float('inf')
+                            logging.info(f"Rate change detected for {state}/{naic}/{plan}: {prev_rates[0]['rate']} -> {curr_rates[0]['rate']} ({percent_change:.2f}%)")
+                            has_changes = True
+                            
+                            # Get company name for notifications
+                            company_name = "Unknown"
+                            if prev_response and len(prev_response) > 0:
+                                company_name = prev_response[0].get('company_base', {}).get('name', "Unknown")
+                            
+                            # Add to changes details for notification
+                            changes_details.append({
+                                'state': state,
+                                'naic': naic,
+                                'company': company_name,
+                                'plan': plan,
+                                'previous_rate': prev_rates[0]['rate'],
+                                'current_rate': curr_rates[0]['rate'],
+                                'previous_effective_date': prev_rates[0]['effective_date'],
+                                'current_effective_date': curr_rates[0]['effective_date'],
+                                'percent_change': percent_change,
+                                'previous_query_date': previous_date,
+                                'current_query_date': current_date
+                            })
+                
+                # Record any detected changes to the notification file
+                if has_changes and changes_details:
+                    self._record_notification(changes_details)
+                
+                return has_changes
+                
+        except Exception as e:
+            logging.error(f"Error checking rates for {naic} in {state}: {str(e)}")
+            return True  # Assume change needed if error occurs to be safe
+    
+    def _record_notification(self, changes_details):
+        """Record rate change notifications to a file."""
+        try:
+            with open(self.notification_file, 'a') as f:
+                for change in changes_details:
+                    f.write(f"### {change['company']} ({change['naic']}) - {change['state']} - Plan {change['plan']}\n\n")
+                    f.write(f"- Previous Rate: ${change['previous_rate']:.2f} (API effective: {change['previous_effective_date']})\n")
+                    f.write(f"- New Rate: ${change['current_rate']:.2f} (API effective: {change['current_effective_date']})\n")
+                    f.write(f"- Change: {change['percent_change']:.2f}%\n\n")
+        except Exception as e:
+            logging.error(f"Error recording notification: {str(e)}")
+    
+    def _extract_rates(self, response, naic):
+        """Extract rate values and effective dates from API response for comparison."""
+        rates = []
+        for quote in response:
+            if quote.get('company_base', {}).get('naic') == naic:
+                # Use filter_quote to properly process the quote
+                filtered = filter_quote(quote)
+                if filtered and 'rate' in filtered and isinstance(filtered['rate'], (int, float, str)):
+                    try:
+                        # Include the effective date from the response
+                        rate_info = {
+                            'rate': float(filtered['rate']),
+                            'effective_date': filtered.get('effective_date', quote.get('effective_date'))
+                        }
+                        rates.append(rate_info)
+                    except (ValueError, TypeError):
+                        logging.warning(f"Could not convert rate to float: {filtered['rate']}")
+        return rates
+    
+    async def process_all_states_months(self, states: List[str], effective_dates: List[str], 
+                                       process_function):
+        """
+        Process states and dates using the API's natural effective dates.
+        """
+        # Skip the first date - it's already been fully processed
+        if len(effective_dates) <= 1:
+            return
+            
+        # Process each state
+        for state in states:
+            # Get carriers that were processed for the first month
+            carriers = self._get_processed_carriers(state, effective_dates[0])
+            
+            if not carriers:
+                logging.warning(f"No carriers found for {state} in {effective_dates[0]}")
+                continue
+            
+            # For each carrier, check the latest date to see if rates change
+            # Simplify to just check the last month against the first month
+            for naic in carriers:
+                try:
+                    # Check if rates have changed
+                    has_changes = await self.check_carrier_rates(
+                        state, naic, effective_dates[0], effective_dates[-1]
+                    )
+                    
+                    if has_changes:
+                        # Process this carrier for the new date
+                        logging.info(f"Processing {state}/{naic}/{effective_dates[-1]} due to rate changes")
+                        await process_function(state, naic, effective_dates[-1])
+                    else:
+                        # No changes detected - we don't need to add new rate records
+                        logging.info(f"No rate changes for {state}/{naic} - skipping")
+                        
+                        # Mark as processed
+                        try:
+                            # Try with api_effective_date
+                            self.conn.execute("""
+                                INSERT OR REPLACE INTO processed_data 
+                                (state, naic, effective_date, api_effective_date, processed_at, success)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (state, naic, effective_dates[-1], effective_dates[-1], datetime.now(), True))
+                        except Exception as col_error:
+                            if "api_effective_date" in str(col_error):
+                                # Insert without api_effective_date
+                                self.conn.execute("""
+                                    INSERT OR REPLACE INTO processed_data 
+                                    (state, naic, effective_date, processed_at, success)
+                                    VALUES (?, ?, ?, ?, ?)
+                                """, (state, naic, effective_dates[-1], datetime.now(), True))
+                            else:
+                                raise col_error
+                except Exception as e:
+                    logging.error(f"Error checking carrier {naic} in {state}: {str(e)}")
+    
+    def _get_processed_carriers(self, state: str, effective_date: str) -> List[str]:
+        """Get carriers that were successfully processed for a state and date."""
+        result = self.conn.execute("""
+            SELECT DISTINCT naic FROM processed_data 
+            WHERE state = ? AND effective_date = ? AND success = true
+        """, (state, effective_date)).fetchall()
+        
+        return [row[0] for row in result]
+    
+    def _is_processed(self, state: str, naic: str, effective_date: str) -> bool:
+        """Check if a carrier-state-date combination has already been processed."""
+        result = self.conn.execute("""
+            SELECT success FROM processed_data 
+            WHERE state = ? AND naic = ? AND effective_date = ? AND success = true
+        """, (state, naic, effective_date)).fetchone()
+        
+        return result is not None
+    
+    def close(self):
+        """Close the database connection."""
+        if self.conn:
+            self.conn.close()
+
+
+async def main():
+    parser = argparse.ArgumentParser(description="Build a Medicare Supplement Rate database with DuckDB")
+    parser.add_argument("-d", "--db", type=str, default="medicare.duckdb", help="DuckDB database file path")
+    parser.add_argument("-m", "--months", type=int, default=6, help="Number of months to process")
+    parser.add_argument("--states", nargs="+", help="List of states to process (e.g., TX CA)")
+    parser.add_argument("--naics", nargs="+", help="List of NAIC codes to process")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress console output")
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be processed without making changes")
+    parser.add_argument("--max-connections", type=int, default=100, help="Maximum number of concurrent connections")
+    parser.add_argument("--no-spot-check", action="store_true", help="Process all months fully instead of using spot checks")
+    parser.add_argument("--lookup", action="store_true", help="Lookup mode - query rates for a specific ZIP")
+    parser.add_argument("--zip", type=str, help="ZIP code to lookup rates for")
+    parser.add_argument("--age", type=int, default=65, help="Age to lookup rates for")
+    parser.add_argument("--gender", type=str, choices=["M", "F"], default="M", help="Gender to lookup rates for")
+    parser.add_argument("--tobacco", type=int, choices=[0, 1], default=0, help="Tobacco status to lookup rates for")
+    parser.add_argument("--force-reprocess", action="store_true", help="Force reprocessing even if marked as already processed")
+    parser.add_argument("--check-integrity", action="store_true", help="Run database integrity check only")
+    parser.add_argument("--repair-database", action="store_true", help="Attempt to repair database issues by cleaning orphaned entries")
+    
+    args = parser.parse_args()
+    setup_logging(args.quiet)
+    
+    if args.dry_run:
+        logging.info("DRY RUN MODE - No changes will be made to the database")
+    
+    if args.force_reprocess:
+        logging.info("FORCE REPROCESS MODE - Will reprocess data even if already marked as processed")
+    
+    # Set max connections
+    global MAX_CONNECTIONS
+    MAX_CONNECTIONS = args.max_connections
+    
+    try:
+        # Initialize the database builder
+        builder = DuckDBMedicareBuilder(args.db)
+        
+        # Run database integrity check if requested
+        if args.check_integrity:
+            logging.info("Running database integrity check...")
+            builder.check_database_integrity()
+            builder.close()
+            return
+            
+        # Clean up orphaned entries if repair is requested
+        if args.repair_database:
+            logging.info("Repairing database by cleaning orphaned entries...")
+            builder.cleanup_orphaned_entries()
+            builder.check_database_integrity()
+            builder.close()
+            return
+            
+        # Always run a basic integrity check on startup
+        builder.check_database_integrity()
+        
+        # If force reprocess is enabled, override the is_already_processed method
+        if args.force_reprocess:
+            builder.is_already_processed = lambda state, naic, effective_date: False
+        
+        # Lookup mode - query rates for a specific ZIP
+        if args.lookup:
+            if not args.zip:
+                logging.error("ZIP code is required for lookup mode")
+                return
+                
+            effective_dates = generate_effective_dates(args.months)
+            effective_date = effective_dates[0]  # Use first month by default
+            
+            rates = builder.get_rate_by_zip(
+                args.zip, args.gender, args.tobacco, args.age, effective_date
+            )
+            
+            print(f"\nRates for ZIP {args.zip}, {args.gender}, age {args.age}, tobacco {args.tobacco}, {effective_date}:")
+            print("=" * 80)
+            print(f"{'NAIC':<8} {'Company':<30} {'Plan':<5} {'Rate':>10} {'Discount':>10}")
+            print("-" * 80)
+            
+            for rate in rates:
+                print(f"{rate['naic']:<8} {rate['company_name'][:30]:<30} {rate['plan']:<5} "
+                      f"{rate['rate']:>10.2f} {rate['discount_rate']:>10.2f}")
+            
+            print("=" * 80)
+            print(f"Total: {len(rates)} rates found")
+            
+            # Close connections and return
+            builder.close()
+            return
+        
+        # Standard operation - build database
+        
+        # Load carriers
+        selected_naics = args.naics if args.naics else load_carrier_selections()
+        logging.info(f"Selected carriers: {len(selected_naics)}")
+        
+        # Get states to process
+        states_to_process = args.states if args.states else get_all_states()
+        logging.info(f"States to process: {len(states_to_process)}")
+        
+        # Generate effective dates
+        effective_dates = generate_effective_dates(args.months)
+        logging.info(f"Effective dates: {effective_dates}")
+        
+        # Build the database
+        await builder.build_database(
+            states_to_process, 
+            selected_naics, 
+            effective_dates, 
+            args.dry_run,
+            not args.no_spot_check  # Use spot checking unless --no-spot-check is specified
+        )
+        
+        # Run final database integrity check
+        builder.check_database_integrity()
+        
+        # Close the database
+        builder.close()
+        
+        logging.info("Database build completed")
+        
+    except KeyboardInterrupt:
+        logging.info("Process interrupted by user")
+    except Exception as e:
+        logging.error(f"Fatal error: {str(e)}")
+        raise
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 ================
 File: filter_utils.py
@@ -3358,671 +3076,480 @@ def use_int(quote):
     )
 
 ================
-File: hello.py
+File: spot_check.py
 ================
-def main():
-    print("Hello from blitz-quote-engine2!")
-
-
-if __name__ == "__main__":
-    main()
-
-================
-File: map_file.py
-================
-import argparse
-import logging
-from datetime import datetime
-from build_db_new import MedicareSupplementRateDB
+#!/usr/bin/env python3
 import asyncio
-from typing import List, Optional
-from date_utils import get_effective_dates
-from filter_utils import filter_quote_fields
+import logging
+import json
+import random
+import os
+from filter_utils import filter_quote
+from typing import List, Dict, Set, Tuple, Any, Optional
+from datetime import datetime, timedelta
+import duckdb
+from async_csg import AsyncCSGRequest as csg
+from zips import zipHolder
+from config import Config
+import httpx
+import resource
 
-def setup_logging(quiet: bool) -> None:
-    log_filename = 'map_all.log'
+# Global connection pool limits
+MAX_CONNECTIONS = 50
+GLOBAL_SEMAPHORE = asyncio.Semaphore(MAX_CONNECTIONS)
+
+class RateSpotChecker:
+    """
+    Spot checks Medicare rates for changes across months and identifies
+    carriers that need to be fully reprocessed for specific months.
+    """
+    
+    def __init__(self, db_path: str):
+        """Initialize the spot checker."""
+        self.db_path = db_path
+        self.conn = duckdb.connect(db_path)
+        self.cr = csg(Config.API_KEY)
+        self.zip_holder = zipHolder("static/uszips.csv")
+        self.month_semaphore = asyncio.Semaphore(5)  # Limit concurrent months being processed
+        
+    async def init(self):
+        """Initialize async components."""
+        await self.cr.async_init()
+        await self.cr.fetch_token()
+    
+    def get_carrier_list(self, state: str) -> List[str]:
+        """Get list of carriers that exist in the database for a state."""
+        try:
+            result = self.conn.execute("""
+                SELECT DISTINCT naic 
+                FROM rate_store r
+                JOIN rate_regions reg ON r.region_id = reg.region_id
+                WHERE reg.state = ?
+                ORDER BY r.naic
+            """, [state]).fetchall()
+            return [r[0] for r in result]
+        except Exception as e:
+            logging.error(f"Error getting carrier list for {state}: {str(e)}")
+            return []
+    
+    def get_sample_demographics(self) -> List[Dict]:
+        """Generate a small representative set of demographic combinations for spot checking."""
+        demographics = []
+        
+        # Male/Female, Smoker/Non-smoker, ages 65/70/75/80
+        for gender in ["M", "F"]:
+            for tobacco in [0, 1]:
+                for age in [65, 70, 75, 80]:
+                    demographics.append({
+                        "gender": gender,
+                        "tobacco": tobacco,
+                        "age": age
+                    })
+        
+        # Select random subset to keep API calls manageable
+        random.shuffle(demographics)
+        return demographics[:6]  # Use 6 demographic combinations for spot checking
+    
+    def get_representative_regions(self, state: str, naic: str, limit: int = 2) -> List[Dict]:
+        """Get representative regions for a carrier in a state."""
+        try:
+            # Select regions from the database
+            result = self.conn.execute("""
+                SELECT region_id, mapping_type, region_data
+                FROM rate_regions
+                WHERE state = ? AND naic = ?
+                ORDER BY region_id
+                LIMIT ?
+            """, [state, naic, limit]).fetchall()
+            
+            if not result:
+                logging.warning(f"No regions found for {naic} in {state}")
+                return []
+            
+            regions = []
+            for region_id, mapping_type, region_data in result:
+                # Parse region data (JSON array of locations)
+                locations = json.loads(region_data)
+                
+                # Get a representative ZIP code for this region
+                rep_zip = None
+                if mapping_type == "zip5":
+                    if locations:
+                        rep_zip = locations[0]
+                else:  # county
+                    for county in locations:
+                        zips = self.zip_holder.lookup_zip_by_county(state, county)
+                        if zips:
+                            rep_zip = zips[0]
+                            break
+                
+                if rep_zip:
+                    regions.append({
+                        "region_id": region_id,
+                        "rep_zip": rep_zip,
+                        "mapping_type": mapping_type
+                    })
+            
+            return regions
+            
+        except Exception as e:
+            logging.error(f"Error getting representative regions for {naic} in {state}: {str(e)}")
+            return []
+    
+    async def spot_check_carrier(self, state: str, naic: str, source_date: str, 
+                                target_date: str) -> bool:
+        """
+        Spot check if rates changed between source_date and target_date.
+        Returns True if rates changed and carrier needs updating.
+        """
+        try:
+            # Get representative regions
+            regions = self.get_representative_regions(state, naic)
+            if not regions:
+                logging.error(f"No regions found for {naic} in {state}")
+                return False
+            
+            # Get sample demographics
+            demographics = self.get_sample_demographics()
+            
+            # Get plans for this state
+            if state == 'MA':
+                plans = ['MA_CORE']
+            elif state == 'MN':
+                plans = ['MN_BASIC']
+            elif state == 'WI':
+                plans = ['WIR_A50%']
+            else:
+                plans = ['G', 'N']
+            
+            # Check a sample of quotes across demographics and plans for each region
+            async with GLOBAL_SEMAPHORE:
+                rates_changed = False
+                
+                for region in regions:
+                    region_id = region["region_id"]
+                    rep_zip = region["rep_zip"]
+                    
+                    for demographic in demographics:
+                        for plan in plans:
+                            # Skip if we already know rates changed
+                            if rates_changed:
+                                continue
+                                
+                            # Check if rates differ between source and target date
+                            changed = await self._compare_rates(
+                                state, naic, region_id, rep_zip, demographic, plan,
+                                source_date, target_date
+                            )
+                            
+                            if changed:
+                                logging.info(f"Rate change detected for {naic} in {state} between {source_date} and {target_date}")
+                                rates_changed = True
+                                break  # No need to check more combinations
+            
+            return rates_changed
+            
+        except Exception as e:
+            logging.error(f"Error spot checking {naic} in {state}: {str(e)}")
+            return False  # Assume no changes if error occurs
+    
+    async def _compare_rates(self, state: str, naic: str, region_id: str, rep_zip: str, 
+                           demographic: Dict, plan: str, source_date: str, 
+                           target_date: str) -> bool:
+        """Compare rates between two dates and return True if they changed."""
+        try:
+            # Get rates from database for source date
+            db_rate, db_effective_date = self._get_db_rate(
+                region_id, demographic["gender"], demographic["tobacco"],
+                demographic["age"], naic, plan, source_date
+            )
+            
+            if db_rate is None:
+                logging.warning(f"No rate in database for {naic} in {state} for region {region_id} for {source_date}")
+                return True  # Assume change needed if source rate missing
+            
+            # Fetch rate from API for target date
+            params = {
+                "zip5": rep_zip,
+                "naic": naic,
+                "gender": demographic["gender"],
+                "tobacco": demographic["tobacco"],
+                "age": demographic["age"],
+                "plan": plan,
+                "effective_date": target_date
+            }
+            
+            response = await self.cr.fetch_quote(**params)
+            
+            # Extract rate and effective date from response
+            api_rates = []
+            for quote in response:
+                if quote.get('company_base', {}).get('naic') == naic:
+                    filtered_quote = filter_quote(quote)
+                    if filtered_quote and 'rate' in filtered_quote:
+                        api_rates.append({
+                            'rate': filtered_quote['rate'],
+                            'effective_date': quote.get('effective_date')
+                        })
+            
+            if not api_rates:
+                logging.warning(f"No API rate found for {naic} in {state} at {rep_zip} for {target_date}")
+                return True  # Assume change needed if API rate missing
+            
+            for api_rate_info in api_rates:
+                api_rate = api_rate_info['rate']
+                api_effective_date = api_rate_info['effective_date']
+                if db_rate != api_rate or db_effective_date != api_effective_date:
+                    logging.info(
+                        f"Rate changed from {db_rate} to {api_rate} or effective date changed "
+                        f"from {db_effective_date} to {api_effective_date} for {naic} at region {region_id}"
+                    )
+                    return True
+            return False
+            
+        except Exception as e:
+            logging.error(f"Error comparing rates: {str(e)}")
+            return True  # Assume change needed if error occurs
+    
+    def _get_db_rate(self, region_id: str, gender: str, tobacco: int, 
+                   age: int, naic: str, plan: str, effective_date: str) -> Tuple[Optional[float], Optional[str]]:
+        """Get rate and effective date from database."""
+        try:
+            result = self.conn.execute("""
+                SELECT rate, effective_date 
+                FROM rate_store 
+                WHERE region_id = ? 
+                  AND gender = ? 
+                  AND tobacco = ? 
+                  AND age = ? 
+                  AND naic = ? 
+                  AND plan = ? 
+                  AND effective_date <= ?
+                ORDER BY effective_date DESC
+                LIMIT 1
+            """, [region_id, gender, tobacco, age, naic, plan, effective_date]).fetchone()
+            
+            return (result[0], result[1]) if result else (None, None)
+            
+        except Exception as e:
+            logging.error(f"Database error getting rate: {str(e)}")
+            return (None, None)
+    
+    async def process_carrier_month(self, state: str, naic: str, source_date: str, 
+                                  target_date: str, process_function) -> bool:
+        """
+        Process a carrier for a specific month.
+        If spot check shows changes, call the provided process_function.
+        """
+        try:
+            # Check if target month already has data
+            has_data = self._check_month_data(state, naic, target_date)
+            
+            if has_data:
+                logging.info(f"{naic} in {state} already has data for {target_date}")
+                return True
+                
+            # Spot check to see if rates changed
+            rates_changed = await self.spot_check_carrier(state, naic, source_date, target_date)
+            
+            if rates_changed:
+                # Process carrier with full rate refresh
+                logging.info(f"Processing {naic} in {state} for {target_date} due to rate changes")
+                success = await process_function(state, naic, target_date)
+                return success
+            else:
+                # No changes detected - no need to update the database
+                logging.info(f"No rate changes for {naic} in {state} between {source_date} and {target_date} - skipping")
+                # Mark as processed in the database to avoid rechecking
+                self.mark_processed(state, naic, target_date)
+                return True
+                
+        except Exception as e:
+            logging.error(f"Error processing {naic} in {state} for {target_date}: {str(e)}")
+            return False
+    
+    def _check_month_data(self, state: str, naic: str, effective_date: str) -> bool:
+        """Check if data already exists for a month."""
+        try:
+            result = self.conn.execute("""
+                SELECT COUNT(*) 
+                FROM rate_store r
+                JOIN rate_regions reg ON r.region_id = reg.region_id
+                WHERE reg.state = ? 
+                  AND r.naic = ? 
+                  AND r.effective_date = ?
+                LIMIT 1
+            """, [state, naic, effective_date]).fetchone()
+            
+            return result[0] > 0 if result else False
+            
+        except Exception as e:
+            logging.error(f"Error checking month data: {str(e)}")
+            return False
+    
+    def mark_processed(self, state: str, naic: str, effective_date: str, api_effective_date: str = None):
+        """Mark a carrier-state-date combination as processed without adding new data."""
+        try:
+            # Check if api_effective_date column exists
+            try:
+                self.conn.execute("""
+                    INSERT OR REPLACE INTO processed_data 
+                    (state, naic, effective_date, api_effective_date, processed_at, success)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                """, [state, naic, effective_date, api_effective_date or effective_date, True])
+            except Exception as col_error:
+                if "api_effective_date" in str(col_error):
+                    # Insert without the api_effective_date column
+                    self.conn.execute("""
+                        INSERT OR REPLACE INTO processed_data 
+                        (state, naic, effective_date, processed_at, success)
+                        VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+                    """, [state, naic, effective_date, True])
+                else:
+                    raise col_error
+        except Exception as e:
+            logging.error(f"Error marking processed: {str(e)}")
+    
+    async def process_state_months(self, state: str, months: List[str], 
+                                 process_carrier_func) -> Dict[str, Dict[str, bool]]:
+        """
+        Process all carriers for a state across months.
+        For each month after the first, spot check and copy forward when possible.
+        """
+        if not months:
+            return {}
+            
+        # Get carriers for this state
+        carriers = self.get_carrier_list(state)
+        if not carriers:
+            logging.warning(f"No carriers found for {state}")
+            return {}
+            
+        results = {month: {} for month in months}
+        source_date = months[0]  # First month is already fully processed
+        
+        # Process each subsequent month
+        for i in range(1, len(months)):
+            target_date = months[i]
+            month_tasks = []
+            
+            # Create tasks for all carriers
+            for naic in carriers:
+                task = self.process_carrier_month(
+                    state, naic, source_date, target_date, process_carrier_func
+                )
+                month_tasks.append((naic, task))
+            
+            # Wait for all carrier tasks to complete for this month
+            for naic, task in month_tasks:
+                try:
+                    success = await task
+                    results[target_date][naic] = success
+                except Exception as e:
+                    logging.error(f"Error in task for {naic} in {state} for {target_date}: {str(e)}")
+                    results[target_date][naic] = False
+            
+            # Update source date for next iteration
+            source_date = target_date
+        
+        return results
+    
+    async def process_all_states_months(self, states: List[str], months: List[str], 
+                                      process_carrier_func) -> Dict[str, Dict[str, Dict[str, bool]]]:
+        """Process all states across all months using spot checking and copy forward."""
+        results = {}
+        
+        for state in states:
+            async with self.month_semaphore:
+                try:
+                    logging.info(f"Processing {state} across {len(months)} months")
+                    state_results = await self.process_state_months(state, months, process_carrier_func)
+                    results[state] = state_results
+                except Exception as e:
+                    logging.error(f"Error processing {state} across months: {str(e)}")
+                    results[state] = {month: {} for month in months[1:]}
+        
+        return results
+    
+    def close(self):
+        """Close database connection."""
+        if self.conn:
+            self.conn.close()
+
+
+# Command-line interface for standalone usage
+async def main():
+    import argparse
+    from build_duckdb import get_all_states, generate_effective_dates, load_carrier_selections
+    
+    parser = argparse.ArgumentParser(description="Spot check Medicare rates across months")
+    parser.add_argument("-d", "--db", type=str, default="medicare.duckdb", help="DuckDB database file path")
+    parser.add_argument("-m", "--months", type=int, default=6, help="Number of months to process")
+    parser.add_argument("--states", nargs="+", help="List of states to process (e.g., TX CA)")
+    parser.add_argument("--naics", nargs="+", help="List of NAIC codes to process")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress console output")
+    
+    args = parser.parse_args()
+    
+    # Set up logging
+    log_filename = f'spot_check_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
     log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     
-    root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-
-    file_handler = logging.FileHandler(log_filename, mode='a')
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(logging.Formatter(log_format))
-
-    root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(file_handler)
-
-    if not quiet:
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(logging.Formatter(log_format))
-        root_logger.addHandler(console_handler)
-
-def get_previous_month(date_str: str) -> str:
-    """Get the first day of the previous month"""
-    date = datetime.strptime(date_str, '%Y-%m-%d')
-    if date.month == 1:
-        return f"{date.year-1}-12-01"
-    return f"{date.year}-{date.month-1:02d}-01"
-
-async def process_state_naics(db, state: str, effective_date: str, dic: dict) -> set:
-    available_naics = await db.get_available_naics(state, effective_date)
-    selected_naics = set([x['naic'] for x in db.get_selected_carriers()])
-    ls = available_naics.intersection(selected_naics)
-    dic[state] = ls
- 
-
+    logging.basicConfig(
+        level=logging.INFO,
+        format=log_format,
+        handlers=[
+            logging.FileHandler(log_filename),
+            logging.StreamHandler() if not args.quiet else logging.NullHandler()
+        ]
+    )
     
-
-
-async def main() -> None:
-    parser = argparse.ArgumentParser(description="Process Medicare Supplement Rate data for states.")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress console output")
-    parser.add_argument("-f", "--file", type=str, required=True, help="JSON file from check_script.py containing states and dates to process")
-    parser.add_argument("-d", "--db", type=str, required=True, help="Database file name")
-    parser.add_argument("-m", "--months", type=int, default=6, help="Number of months to process")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be processed without making changes")
-
-    args = parser.parse_args()
-    logging.info(f"args: {args}")
-    setup_logging(args.quiet)
-
-    if not args.dry_run:
-        db = MedicareSupplementRateDB(db_path=args.db)
-        await db.cr.async_init()
-        await db.cr.fetch_token()
-
-    # Create a list of (state, effective_date) tuples to process
-    effective_dates = get_effective_dates(args.months)
-    state_date_naic_tuples = []
-
-
-    import json
-    with open(args.file, 'r') as f:
-        data = json.load(f)
-
-    states_to_process_set = set()
+    try:
+        # Initialize spot checker
+        checker = RateSpotChecker(args.db)
+        await checker.init()
         
-    # Extract specific state/date combinations where changes were detected
-    for effective_date, date_entry in data.items():
-        assert effective_date == date_entry['effective_date']
-        for state, dic in date_entry['changes'].items():
-            for naic, changed in dic.items():
-                if changed:
-                    state_date_naic_tuples.append((state, effective_date, naic))
-
-    states_to_process = list(states_to_process_set)
-    if state_date_naic_tuples:
-        logging.info(f"Found state/date pairs to process: {state_date_naic_tuples}")
-    else:
-        logging.info("No changes detected in input file")
-        return
-   
-
-
-    # Sort pairs by date to ensure proper processing order
-    state_date_naic_tuples.sort(key=lambda x: x[1])
-
-    if args.dry_run:
-        print("\nDRY RUN - Would update the following state/date combinations:\n")
-        current_date = None
-        for state, effective_date, naic in state_date_naic_tuples:
-            if effective_date != current_date:
-                current_date = effective_date
-                print(f"Effective Date: {effective_date}")
-            print(f"    - {state} {naic}")
-        return
-
-
-    # Get available naics for each state
-
-    # get state
-    tasks = []
-    for state, effective_date, naic in state_date_naic_tuples:
-        tasks.append(db.set_state_map_naic(naic, state))
-    logging.info(f"Processing {len(tasks)} tasks")
-    await asyncio.gather(*tasks)
-
-    rate_tasks = []
-    for state, effective_date, naic in state_date_naic_tuples:
-        rate_tasks.extend(db.get_rate_tasks(state, naic, effective_date))
-
-    logging.info(f"Processing {len(rate_tasks)} rate tasks")
-    return await asyncio.gather(*rate_tasks)     
-
-
-
+        # Get carriers to process
+        selected_naics = args.naics if args.naics else load_carrier_selections()
+        logging.info(f"Selected carriers: {len(selected_naics)}")
+        
+        # Get states to process
+        states_to_process = args.states if args.states else get_all_states()
+        logging.info(f"States to process: {len(states_to_process)}")
+        
+        # Generate effective dates
+        effective_dates = generate_effective_dates(args.months)
+        logging.info(f"Effective dates: {effective_dates}")
+        
+        # For standalone testing, we need a dummy process function
+        async def dummy_process(state, naic, effective_date):
+            logging.info(f"Would process {naic} in {state} for {effective_date}")
+            return True
+        
+        # Process all states across months
+        results = await checker.process_all_states_months(
+            states_to_process, effective_dates, dummy_process
+        )
+        
+        # Summarize results
+        for state, state_results in results.items():
+            logging.info(f"State {state} results:")
+            for month, month_results in state_results.items():
+                changes = sum(1 for success in month_results.values() if success)
+                logging.info(f"  {month}: {changes}/{len(month_results)} carriers processed")
+        
+        # Close connections
+        checker.close()
+        logging.info("Spot check completed")
+        
+    except KeyboardInterrupt:
+        logging.info("Process interrupted by user")
+    except Exception as e:
+        logging.error(f"Fatal error: {str(e)}")
+        raise
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-================
-File: map_sequential.py
-================
-import argparse
-import logging
-from datetime import datetime
-from build_db_new import MedicareSupplementRateDB
-import asyncio
-from typing import List, Dict, Set, Tuple
-from check_script import process_rate_changes
-from collections import defaultdict
-from pprint import pprint
-import json
-from datetime import timedelta
-
-state_list = [
-            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-            "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-            "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-            "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-            "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
-            "DC"
-        ]
-
-def setup_logging(quiet: bool) -> None:
-    log_filename = 'map_sequential.log'
-    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    
-    root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-
-    file_handler = logging.FileHandler(log_filename, mode='a')
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(logging.Formatter(log_format))
-
-    root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(file_handler)
-
-    if not quiet:
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(logging.Formatter(log_format))
-        root_logger.addHandler(console_handler)
-
-def get_default_effective_date(months_ahead: int = 0) -> str:
-    """Get the effective date (first of next month + optional months ahead)"""
-    today = datetime.now()
-    if today.day == 1 and months_ahead == 0:
-        return today.strftime('%Y-%m-%d')
-    next_month = today.replace(day=1) + timedelta(days=32)
-    target_date = next_month.replace(day=1)
-    if months_ahead > 0:
-        for _ in range(months_ahead):
-            target_date = (target_date + timedelta(days=32)).replace(day=1)
-    return target_date.strftime('%Y-%m-%d')
-
-def get_previous_month(date_str: str) -> str:
-    date = datetime.strptime(date_str, '%Y-%m-%d')
-    if date.month == 1:
-        return f"{date.year-1}-12-01"
-    return f"{date.year}-{date.month-1:02d}-01"
-
-async def process_state_naics(db, state: str, effective_date: str, dic: dict):
-    available_naics = await db.get_available_naics(state, effective_date)
-    selected_naics = set([x['naic'] for x in db.get_selected_carriers()])
-    ls = available_naics.intersection(selected_naics)
-    dic[state] = ls
- 
-
-async def process_check_task(db, state: str, effective_date: str, dic: dict, available_naics: set, retry = 3):
-    try:
-            # Create local results first
-        _, _, v = await db.check_rate_changes(state, None, effective_date, available_naics)
-        vfilt = {k: v for k, v in v.items() if v}
-        
-        if sum(1 for x in v.values() if x) > 1:
-            # Return results instead of modifying shared dict
-            return {
-                'state': state,
-                'changes': vfilt
-            }
-        return None
-    except Exception as e:
-        if retry > 0:
-            logging.error(f"Error processing {state} at {effective_date}: {e}. Retrying...")
-            return await process_check_task(db, state, effective_date, dic, available_naics, retry - 1)
-        logging.error(f"Error processing {state} at {effective_date}: {e}. Giving up.")
-        return { 'state': state, 'changes': {}, 'error': str(e) }
-    
-
-async def main():
-    parser = argparse.ArgumentParser(description="Sequentially process and map Medicare Supplement Rate data")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress console output")
-    parser.add_argument("-d", "--db", type=str, required=True, help="Database file name")
-    parser.add_argument("-m", "--months", type=int, default=3, help="Number of months to process")
-    parser.add_argument("-n", "--nzips", type=int, default=1, help="Number of ZIP codes to process per state during check")
-    parser.add_argument("-s", "--state", nargs="+", help="Process a single or multiple states")
-    parser.add_argument("--dry-run", action="store_true", help="Dry run the script without copying rates")
-    parser.add_argument("-o", "--output", type=str, help="Output file name")
-    parser.add_argument("--remap", action="store_true", help="Remap the rates if applicable before moving forward")
-    parser.add_argument("--log-file", type=str, help="Custom log file for database operations")
-    
-    args = parser.parse_args()
-    setup_logging(args.quiet)
-    logger = logging.getLogger(__name__)
-
-    logger.info("Connecting to database...")
-    db = MedicareSupplementRateDB(db_path=args.db, log_file=args.log_file)
-    await db.cr.async_init()
-    await db.cr.fetch_token()
-
-    # Load data from check script results
-    dates = [get_default_effective_date(i) for i in range(args.months)]
-    logger.info(f"Processing dates: {dates}")
-
-    # Sort dates in ascending order
-    states_to_process = set(args.state) if args.state else set(state_list)
-    logger.info(f"Processing states: {states_to_process}")
-
-    state_available = {}
-    state_available_tasks = []
-
-    # this lets us only run the check once, not every month
-    for state in states_to_process: #, effective_date in state_date_pairs:
-        state_available_tasks.append(process_state_naics(db, state, dates[0], state_available))
-    await asyncio.gather(*state_available_tasks)
-
-    # Add semaphore to limit concurrent tasks
-    semaphore = asyncio.Semaphore(100)  # Adjust number based on your needs
-    
-    async def bounded_process_check_task(*args, **kwargs):
-        async with semaphore:
-            return await process_check_task(*args, **kwargs)
-    
-    # Collect all states and NAICs
-    out = {}
-    for date in dates:
-        check_tasks = []
-        for state in states_to_process:
-            available_naics = state_available.get(state)
-            for _ in range(args.nzips):
-                check_tasks.append(bounded_process_check_task(db, state, date, out, available_naics))
-        
-        logger.info(f"Checking rate changes for {len(states_to_process)} states in {len(check_tasks)} tasks...")
-        if args.dry_run:
-            logging.info(f"Dry run, skipping check tasks")
-            results = []
-        else:
-            results = await asyncio.gather(*check_tasks)
-        
-        # Combine results after all tasks complete
-        states_with_changes = []
-        changes = {}
-        errors = {}
-        for result in results:
-            if result:
-                states_with_changes.append(result['state'])
-                changes[result['state']] = result['changes']
-            if result and 'error' in result:
-                errors[result['state']] = result['error']
-        
-        date_entry = {
-            'effective_date': date,
-            'states_with_changes': states_with_changes,
-            'changes': changes, 
-            'errors': errors
-        }
-        out[date] = date_entry
-
-        if args.remap and changes and not args.dry_run:
-            # Create semaphore for map tasks
-            map_semaphore = asyncio.Semaphore(100)
-
-            async def bounded_set_map_task(naic, state):
-                async with map_semaphore:
-                    return await db.set_state_map_naic(naic, state)
-
-            set_map_tasks = []
-            for state, dic in changes.items():
-                for naic, bool_ in dic.items():
-                    if bool_:
-                        set_map_tasks.append(bounded_set_map_task(naic, state))
-            logging.info(f"Setting state map for {len(set_map_tasks)} states in {len(set_map_tasks)} tasks...")
-            await asyncio.gather(*set_map_tasks)
-
-            # Create semaphore for rate tasks
-            rate_semaphore = asyncio.Semaphore(100)
-
-            async def bounded_rate_task(state, naic, date):
-                async with rate_semaphore:
-                    return await db.get_rate_tasks(state, naic, date)
-
-            rate_tasks = []
-            for state, dic in changes.items():
-                for naic, bool_ in dic.items():
-                    if bool_:
-                        rate_tasks.append(bounded_rate_task(state, naic, date))
-            logging.info(f"Processing {len(rate_tasks)} rate tasks")
-            results = await asyncio.gather(*rate_tasks)
-            logging.info(f"Processed {len(results)} rate tasks for {state}")
-
-
-    logger.info("Processing complete")
-    
-    if args.output:
-        with open(args.output, 'w') as f:
-            json.dump(out, f, indent=2)
-
-    if args.dry_run:
-        pprint(out)
-        return out
-    
-
-    
-
-if __name__ == "__main__":
-    r = asyncio.run(main())
-
-================
-File: normalize_county.py
-================
-def normalize_county_name(county: str) -> str:
-    """
-    Normalize county names by removing common suffixes and standardizing 'Saint' to 'ST'.
-    
-    Args:
-        county: Input county name (str)
-        
-    Returns:
-        Normalized county name (str)
-    """
-    # Convert to uppercase for consistent processing
-    county = county.upper().strip()
-    
-    # Standardize 'Saint' to 'ST'
-    saint_variants = ["SAINT", "ST.", "STE.", "ST"]
-    for variant in saint_variants:
-        if county.startswith(variant):
-            county = county.replace(variant, "ST", 1)
-            break
-    
-    # Remove common suffixes
-    suffixes = [
-        " COUNTY",
-        " PARISH",
-        " BOROUGH",
-        " CITY",
-        " AREA",
-        " MUNICIPALITY",
-        " DISTRICT"
-    ]
-    
-    # Remove any suffix
-    for suffix in suffixes:
-        if county.endswith(suffix):
-            county = county[:-len(suffix)]
-    
-    return county
-
-# Example usage and tests
-def test_county_normalizer():
-    test_cases = [
-        "Saint Louis County",
-        "St. Charles Parish",
-        "Ste. Genevieve Borough",
-        "St Louis City",
-        "Orleans Parish",
-        "New York Borough",
-        "King County",
-        "Jefferson Area"
-    ]
-    
-    print("Test Results:")
-    print("-" * 40)
-    for test in test_cases:
-        normalized = normalize_county_name(test)
-        print(f"Original: {test}")
-        print(f"Normalized: {normalized}")
-        print("-" * 40)
-
-if __name__ == "__main__":
-    test_county_normalizer()
-
-================
-File: tt.py
-================
-from build_db_new import MedicareSupplementRateDB
-from build_db_new import process_quote
-
-import asyncio
-from pprint import pprint
-
-import logging
-import time
-import copy
-
-ar = asyncio.run
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from app.models import CarrierSelection
-
-# Add global variable at the top level
-selected_naics = []
-
-
-async def init(db):
-    await db.cr.async_init()
-    await db.cr.fetch_token()
-
-
-state_list = [
-    "AL",
-    "AK",
-    "AZ",
-    "AR",
-    "CA",
-    "CO",
-    "CT",
-    "DE",
-    "FL",
-    "GA",
-    "HI",
-    "ID",
-    "IL",
-    "IN",
-    "IA",
-    "KS",
-    "KY",
-    "LA",
-    "ME",
-    "MD",
-    "MA",
-    "MI",
-    "MN",
-    "MS",
-    "MO",
-    "MT",
-    "NE",
-    "NV",
-    "NH",
-    "NJ",
-    "NM",
-    "NY",
-    "NC",
-    "ND",
-    "OH",
-    "OK",
-    "OR",
-    "PA",
-    "RI",
-    "SC",
-    "SD",
-    "TN",
-    "TX",
-    "UT",
-    "VT",
-    "VA",
-    "WA",
-    "WV",
-    "WI",
-    "WY",
-    "DC",
-]
-
-
-async def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Fetch quotes for random zip codes")
-    parser.add_argument("-d", "--db", type=str, help="Database to use")
-    args = parser.parse_args()
-
-    # Create SQLAlchemy engine and session
-    engine = create_engine(f"sqlite:///{args.db}")
-    Session = sessionmaker(bind=engine)
-    db_session = Session()
-
-    db = MedicareSupplementRateDB(args.db)
-
-    # Initialize database connection and token inside the async context
-    await init(db)
-
-    # Get selected carriers using the correct method
-    global selected_naics
-    selected_carriers = db.get_selected_carriers()
-    selected_naics = set([carrier["naic"] for carrier in selected_carriers])
-
-    return db, db_session
-    tasks = []
-    for state in state_list:
-        naics = db.get_existing_naics(state)
-        for naic in naics:
-            for td in ["2025-02-01", "2025-03-01", "2025-04-01"]:
-                tasks.append(db.copy_rates(state, naic, "2025-01-01", td))
-
-    logging.info(f"Tasks: {len(tasks)}. Running sequentially.")
-    start_time = time.time()
-    for t in tasks:
-        await t
-    end_time = time.time()
-    logging.info(f"Time taken: {end_time - start_time} seconds")
-    return db
-
-
-if __name__ == "__main__":
-    db, db_session = asyncio.run(main())
-    p = {
-        "age": 67,
-        "gender": "M",
-        "plan": "G",
-        "tobacco": 0,
-        "apply_discounts": 0,
-        "zip5": "65622",
-        "select": 0,
-        "naic": "79413",
-    }
-
-    # Create an async function to handle the concurrent quote fetching
-    r = ar(db.cr.fetch_quote(**p))
-
-    db_session.close()
-
-================
-File: write-test.py
-================
-import libsql_experimental as libsql
-import readline
-import os
-
-
-def main():
-    # Expand the home directory if needed
-    file = os.path.expanduser("~/libsql-client-ts/packages/libsql-client/examples/local.db")
-
-    # Use context manager for proper connection handling
-    conn = libsql.connect(file)
-    # Create table
-    conn.execute("CREATE TABLE IF NOT EXISTS guest_book_entries (comment TEXT)")
-
-    # Get user input
-    comment = input("Enter your comment: ")
-
-    # Insert the comment - convert list to tuple
-    conn.execute("INSERT INTO guest_book_entries (comment) VALUES (?)", (comment,))
-
-    conn.commit()
-
-    # Query and display results
-    print("\nGuest book entries:")
-    cursor = conn.execute("SELECT * FROM guest_book_entries")
-    for row in cursor.fetchall():
-        print(f" - {row[0]}")
-
-
-if __name__ == "__main__":
-    main()
-
-================
-File: zips.py
-================
-# zips.py
-from csv import DictReader
-
-class zipHolder():
-
-    def __init__(self, file_name):
-        self.load_zips(file_name)
-
-    def __call__(self, zip5, show_state=False):
-        county = self.lookup_county(zip5)
-        if show_state:
-            state = self.lookup_state(zip5)
-            return county, state
-        return county
-
-    def lookup_county(self, zip5):
-        return self.zip_counties.get(str(zip5).zfill(5), ['None'])
-    
-    def lookup_county2(self, zip5):
-        return self.zip_counties.get(str(zip5).zfill(5), None)
-
-    def lookup_state(self, zip5):
-        return self.zip_states.get(str(zip5).zfill(5), ['None'])
-
-    def lookup_state2(self, zip5):
-        return self.zip_states.get(str(zip5).zfill(5), 'None')
-
-    def lookup_zip_by_county(self, state, county):
-        return self.zip_by_county.get(f"{state.upper()}",{}).get(county.upper(), [])
-    
-    def lookup_zips_by_state(self, state):
-        return self.zip_by_states.get(state, [])
-
-    def load_zips(self, file_name):
-        zip_c = {}
-        zip_s = {}
-        with open(file_name, mode='r') as cf:
-            cr = DictReader(cf)
-            first_row = True
-            for row in cr:
-                if first_row:
-                    first_row = False
-                else:
-                    zip_c[(row['zip'])] = [
-                        i.upper() for i in row['county_names_all'].split('|')
-                    ]
-                    zip_s[(row['zip'])] = row['state_id']
-        zip_by_county = {}
-        for zip, clist in zip_c.items():
-            for c in clist:
-                state = zip_s.get(zip)
-                dic = zip_by_county.get(state, {})
-                ls = dic.get(c, [])
-                ls.append(zip)
-                dic[c] = ls
-                zip_by_county[state] = dic
-        self.zip_counties = zip_c
-        self.zip_states = zip_s
-        self.zip_by_county = zip_by_county
-        zip_by_states = {}
-        for zip, state in zip_s.items():
-            ls = zip_by_states.get(state, [])
-            ls.append(zip)
-            zip_by_states[state] = ls
-        self.zip_by_states = zip_by_states
 
 
 

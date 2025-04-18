@@ -1,0 +1,1226 @@
+{
+  "test_run": "2025-04-17T19:37:26.358589",
+  "all_results": {
+    "2025-05-01": [
+      {
+        "naic": "20699",
+        "group": -1,
+        "company_name": "Ace Prop & Cas Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34375,
+            "discount_rate": 33344,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "25178",
+        "group": -1,
+        "company_name": "State Farm Mut Auto Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 28977,
+            "discount_rate": 28977,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "57320",
+        "group": -1,
+        "company_name": "WoodmenLife",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33557,
+            "discount_rate": 32550,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "57991",
+        "group": -1,
+        "company_name": "Everence Assn Inc",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 26295,
+            "discount_rate": 26295,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "58181",
+        "group": -1,
+        "company_name": "Royal Arcanum",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32145,
+            "discount_rate": 31181,
+            "discount_category": "Roommate"
+          }
+        ]
+      },
+      {
+        "naic": "60380",
+        "group": -1,
+        "company_name": "AFLAC",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 36344,
+            "discount_rate": 35254,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "60542",
+        "group": -1,
+        "company_name": "American Home Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34488,
+            "discount_rate": 33281,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "60984",
+        "group": -1,
+        "company_name": "Humana Insurance Company",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33471,
+            "discount_rate": 32467,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "61727",
+        "group": -1,
+        "company_name": "Cigna National Health Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33888,
+            "discount_rate": 32871,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "63223",
+        "group": -1,
+        "company_name": "Federal Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 31407,
+            "discount_rate": 31407,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "66001",
+        "group": -1,
+        "company_name": "American Benefit Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34035,
+            "discount_rate": 32844,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "67059",
+        "group": -1,
+        "company_name": "GPM Health and Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32801,
+            "discount_rate": 32801,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "68500",
+        "group": -1,
+        "company_name": "Continental Life Ins Co Brentwood",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 41358,
+            "discount_rate": 41358,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "69663",
+        "group": -1,
+        "company_name": "USAA Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32997,
+            "discount_rate": 32997,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "69930",
+        "group": -1,
+        "company_name": "MedMutual Protect",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 37658,
+            "discount_rate": 36528,
+            "discount_category": "Roommate"
+          }
+        ]
+      },
+      {
+        "naic": "70319",
+        "group": -1,
+        "company_name": "Washington Natl Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 30974,
+            "discount_rate": 30974,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "72125",
+        "group": -1,
+        "company_name": "Physicians Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33117,
+            "discount_rate": 32289,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "72850",
+        "group": -1,
+        "company_name": "United World Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 35081,
+            "discount_rate": 35081,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "73288",
+        "group": -1,
+        "company_name": "Humana Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34075,
+            "discount_rate": 34075,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "78743",
+        "group": -1,
+        "company_name": "New Era Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 44600,
+            "discount_rate": 44600,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "79413",
+        "group": -1,
+        "company_name": "UnitedHealthcare Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 27399,
+            "discount_rate": 26577,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "82538",
+        "group": -1,
+        "company_name": "Allstate Health Solutions",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32248,
+            "discount_rate": 31281,
+            "discount_category": "Roommate"
+          }
+        ]
+      },
+      {
+        "naic": "92916",
+        "group": -1,
+        "company_name": "United Amer Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33400,
+            "discount_rate": 33400,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "98167",
+        "group": -1,
+        "company_name": "BCBS Of FL",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32748,
+            "discount_rate": 32748,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "99724",
+        "group": -1,
+        "company_name": "LifeShield Natl Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32337,
+            "discount_rate": 31044,
+            "discount_category": "Roommate"
+          }
+        ]
+      }
+    ],
+    "2025-06-01": [
+      {
+        "naic": "20699",
+        "group": -1,
+        "company_name": "Ace Prop & Cas Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34375,
+            "discount_rate": 33344,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "25178",
+        "group": -1,
+        "company_name": "State Farm Mut Auto Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 28977,
+            "discount_rate": 28977,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "57320",
+        "group": -1,
+        "company_name": "WoodmenLife",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33557,
+            "discount_rate": 32550,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "57991",
+        "group": -1,
+        "company_name": "Everence Assn Inc",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 26295,
+            "discount_rate": 26295,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "58181",
+        "group": -1,
+        "company_name": "Royal Arcanum",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32145,
+            "discount_rate": 31181,
+            "discount_category": "Roommate"
+          }
+        ]
+      },
+      {
+        "naic": "60380",
+        "group": -1,
+        "company_name": "AFLAC",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 36344,
+            "discount_rate": 35254,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "60542",
+        "group": -1,
+        "company_name": "American Home Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34488,
+            "discount_rate": 33281,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "60984",
+        "group": -1,
+        "company_name": "Humana Insurance Company",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33471,
+            "discount_rate": 32467,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "61727",
+        "group": -1,
+        "company_name": "Cigna National Health Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33888,
+            "discount_rate": 32871,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "63223",
+        "group": -1,
+        "company_name": "Federal Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 31407,
+            "discount_rate": 31407,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "66001",
+        "group": -1,
+        "company_name": "American Benefit Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34035,
+            "discount_rate": 32844,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "67059",
+        "group": -1,
+        "company_name": "GPM Health and Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32801,
+            "discount_rate": 32801,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "68500",
+        "group": -1,
+        "company_name": "Continental Life Ins Co Brentwood",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 41358,
+            "discount_rate": 41358,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "69663",
+        "group": -1,
+        "company_name": "USAA Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32997,
+            "discount_rate": 32997,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "69930",
+        "group": -1,
+        "company_name": "MedMutual Protect",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 37658,
+            "discount_rate": 36528,
+            "discount_category": "Roommate"
+          }
+        ]
+      },
+      {
+        "naic": "70319",
+        "group": -1,
+        "company_name": "Washington Natl Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 30974,
+            "discount_rate": 30974,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "72125",
+        "group": -1,
+        "company_name": "Physicians Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33117,
+            "discount_rate": 32289,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "72850",
+        "group": -1,
+        "company_name": "United World Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 35081,
+            "discount_rate": 35081,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "73288",
+        "group": -1,
+        "company_name": "Humana Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34075,
+            "discount_rate": 34075,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "78743",
+        "group": -1,
+        "company_name": "New Era Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 44600,
+            "discount_rate": 44600,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "79413",
+        "group": -1,
+        "company_name": "UnitedHealthcare Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 30435,
+            "discount_rate": 29522,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "82538",
+        "group": -1,
+        "company_name": "Allstate Health Solutions",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32248,
+            "discount_rate": 31281,
+            "discount_category": "Roommate"
+          }
+        ]
+      },
+      {
+        "naic": "92916",
+        "group": -1,
+        "company_name": "United Amer Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33400,
+            "discount_rate": 33400,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "98167",
+        "group": -1,
+        "company_name": "BCBS Of FL",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32748,
+            "discount_rate": 32748,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "99724",
+        "group": -1,
+        "company_name": "LifeShield Natl Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32337,
+            "discount_rate": 31044,
+            "discount_category": "Roommate"
+          }
+        ]
+      }
+    ],
+    "2025-07-01": [
+      {
+        "naic": "20699",
+        "group": -1,
+        "company_name": "Ace Prop & Cas Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34375,
+            "discount_rate": 33344,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "25178",
+        "group": -1,
+        "company_name": "State Farm Mut Auto Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 28977,
+            "discount_rate": 28977,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "57320",
+        "group": -1,
+        "company_name": "WoodmenLife",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33557,
+            "discount_rate": 32550,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "57991",
+        "group": -1,
+        "company_name": "Everence Assn Inc",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 26295,
+            "discount_rate": 26295,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "58181",
+        "group": -1,
+        "company_name": "Royal Arcanum",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32145,
+            "discount_rate": 31181,
+            "discount_category": "Roommate"
+          }
+        ]
+      },
+      {
+        "naic": "60380",
+        "group": -1,
+        "company_name": "AFLAC",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 36344,
+            "discount_rate": 35254,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "60542",
+        "group": -1,
+        "company_name": "American Home Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34488,
+            "discount_rate": 33281,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "60984",
+        "group": -1,
+        "company_name": "Humana Insurance Company",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33471,
+            "discount_rate": 32467,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "61727",
+        "group": -1,
+        "company_name": "Cigna National Health Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33888,
+            "discount_rate": 32871,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "63223",
+        "group": -1,
+        "company_name": "Federal Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 31407,
+            "discount_rate": 31407,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "66001",
+        "group": -1,
+        "company_name": "American Benefit Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34035,
+            "discount_rate": 32844,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "67059",
+        "group": -1,
+        "company_name": "GPM Health and Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32801,
+            "discount_rate": 32801,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "68500",
+        "group": -1,
+        "company_name": "Continental Life Ins Co Brentwood",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 41358,
+            "discount_rate": 41358,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "69663",
+        "group": -1,
+        "company_name": "USAA Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32997,
+            "discount_rate": 32997,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "69930",
+        "group": -1,
+        "company_name": "MedMutual Protect",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 37658,
+            "discount_rate": 36528,
+            "discount_category": "Roommate"
+          }
+        ]
+      },
+      {
+        "naic": "70319",
+        "group": -1,
+        "company_name": "Washington Natl Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 30974,
+            "discount_rate": 30974,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "72125",
+        "group": -1,
+        "company_name": "Physicians Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33117,
+            "discount_rate": 32289,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "72850",
+        "group": -1,
+        "company_name": "United World Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 35081,
+            "discount_rate": 35081,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "73288",
+        "group": -1,
+        "company_name": "Humana Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 34075,
+            "discount_rate": 34075,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "78743",
+        "group": -1,
+        "company_name": "New Era Life Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 44600,
+            "discount_rate": 44600,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "79413",
+        "group": -1,
+        "company_name": "UnitedHealthcare Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 30435,
+            "discount_rate": 29522,
+            "discount_category": "Multi-Insured"
+          }
+        ]
+      },
+      {
+        "naic": "82538",
+        "group": -1,
+        "company_name": "Allstate Health Solutions",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32248,
+            "discount_rate": 31281,
+            "discount_category": "Roommate"
+          }
+        ]
+      },
+      {
+        "naic": "92916",
+        "group": -1,
+        "company_name": "United Amer Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 33400,
+            "discount_rate": 33400,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "98167",
+        "group": -1,
+        "company_name": "BCBS Of FL",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32748,
+            "discount_rate": 32748,
+            "discount_category": null
+          }
+        ]
+      },
+      {
+        "naic": "99724",
+        "group": -1,
+        "company_name": "LifeShield Natl Ins Co",
+        "quotes": [
+          {
+            "age": 65,
+            "gender": "M",
+            "plan": "G",
+            "tobacco": 0,
+            "rate": 32337,
+            "discount_rate": 31044,
+            "discount_category": "Roommate"
+          }
+        ]
+      }
+    ]
+  },
+  "differences": {
+    "79413": {
+      "company_name": "UnitedHealthcare Ins Co",
+      "rates": {
+        "2025-05-01": 27399,
+        "2025-06-01": 30435,
+        "2025-07-01": 30435
+      },
+      "discount_rates": {
+        "2025-05-01": 26577,
+        "2025-06-01": 29522,
+        "2025-07-01": 29522
+      }
+    }
+  }
+}

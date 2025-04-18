@@ -3,8 +3,8 @@ from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
-from app.database import get_db
-from app.models import GroupMapping, CompanyNames, CarrierSelection
+from app.database import get_db, get_duckdb_conn
+from app.models import GroupMapping, CompanyNames, CarrierSelection, DuckDBRateStore, DuckDBCarrierInfo, DuckDBRegionMapping, DuckDBRegionMetadata
 import json
 from zips import zipHolder
 import os
@@ -291,99 +291,166 @@ async def fetch_quotes_from_db(db: Session, state: str, zip_code: str, county: s
                              gender: Optional[str], plan: Optional[str],
                              naic: Optional[List[str]] = None,
                              effective_date: Optional[str] = None) -> List[QuoteResponse]:
-    """Fetch quotes from the database"""
-    print(f"effective_date: {effective_date}")
-    query = db.query(GroupMapping, CompanyNames.name).outerjoin(
-        CompanyNames, GroupMapping.naic == CompanyNames.naic
-    ).filter(
-        GroupMapping.state == state,
-        or_(GroupMapping.location == zip_code, GroupMapping.location == county)
-    )
+    """Fetch quotes from the DuckDB database with updated effective date logic"""
+    print(f"Fetching quotes from DuckDB: state={state}, zip={zip_code}, plan={plan}, effective_date={effective_date}")
     
-    if naic:
-        query = query.filter(GroupMapping.naic.in_(naic))
-        
-    group_mappings = query.all()
-
-    if not group_mappings:
+    # Get DuckDB connection
+    conn = get_duckdb_conn()
+    
+    # If DuckDB connection failed, return empty results
+    if conn is None:
+        print("No DuckDB connection available. Falling back to CSG API.")
         return []
-
+    
+    # Default effective date if not provided
+    effective_date_processed = effective_date or get_effective_date()
+    print(f"Processed effective date: {effective_date_processed}")
+    
+    # Initialize results list
     results = []
-    for mapping, company_name in group_mappings:
-        store_key = f"{state}:{mapping.naic}:{mapping.naic_group}"
+    
+    # Convert tobacco to integer for DuckDB query
+    tobacco_int = 1 if tobacco else 0
+    
+    # Get age value for query
+    query_age = age[0] if age and len(age) > 0 else None
+    if not query_age:
+        return []
+    
+    try:
+        # Step 1: Find region_id for the zip code
+        region_query = """
+        SELECT rm.region_id, rm.naic, rm.zip_code, meta.state
+        FROM region_mapping rm
+        JOIN region_metadata meta ON rm.region_id = meta.region_id
+        WHERE rm.zip_code = ? AND meta.state = ?
+        """
         
-        # Build pattern for the inner JSON keys
-        inner_key_parts = [
-            f"{age[0]}" if age else "%",              # age
-            f"{gender}" if gender else "%",            # gender
-            f"{plan}" if plan else "%",               # plan
-            f"{str(tobacco)}" if tobacco is not None else "%"  # tobacco
-        ]
-        inner_key_pattern = ":".join(inner_key_parts)
-        print(f"Looking up store_key: {store_key}, inner pattern: {inner_key_pattern}")
+        if naic:
+            region_query += " AND rm.naic IN ("
+            region_query += ", ".join(["?" for _ in naic])
+            region_query += ")"
+            region_params = [zip_code, state] + naic
+        else:
+            region_params = [zip_code, state]
         
-        sql_query = text("""
-            WITH json_data AS (
-                SELECT value as json_blob
-                FROM rate_store 
-                WHERE key = :store_key
-                AND effective_date = :effective_date
-            ),
-            matched_objects AS (
-                SELECT value as obj
-                FROM json_data, json_each(json_blob)
-                WHERE key LIKE :inner_key_pattern
-            )
-            SELECT json_group_array(obj) as result
-            FROM matched_objects;
-        """)
-
-        result = db.execute(sql_query, {
-            'store_key': store_key,
-            'inner_key_pattern': inner_key_pattern,
-            'effective_date': effective_date or get_effective_date()
-        }).scalar()
-
-        discount_category = db.execute(text("""
-            SELECT discount_category 
-            FROM carrier_selection 
-            WHERE naic = :naic
-        """), {'naic': mapping.naic}).scalar()
-
-
-
-        if result:
-            try:
-                # Parse the outer JSON array
-                quotes_array = json.loads(result)
-                # Parse each quote object
-                quotes = []
-                for quote_data in quotes_array:
-                    if isinstance(quote_data, str):
-                        # If the quote is still a string, parse it again
-                        quote_data = json.loads(quote_data)
-                    quotes.append(Quote(**quote_data))
+        region_results = conn.execute(region_query, region_params).fetchall()
+        
+        if not region_results:
+            print(f"No region found for zip={zip_code}, state={state}")
+            return []
+        
+        print(f"Found {len(region_results)} regions")
+        
+        # Step 2: Get carrier info for display names
+        carrier_info = {}
+        carriers_query = "SELECT naic, company_name, selected FROM carrier_info"
+        carrier_results = conn.execute(carriers_query).fetchall()
+        for carrier in carrier_results:
+            carrier_info[carrier[0]] = {
+                'company_name': carrier[1],
+                'selected': carrier[2],
+                'discount_category': None  # We'll set this later if available
+            }
+        
+        # Step 3: For each region, fetch quotes
+        for region in region_results:
+            region_id = region[0]
+            region_naic = region[1]
+            
+            # Skip if naic filter is provided and this region's naic doesn't match
+            if naic and region_naic not in naic:
+                continue
+            
+            # Use the most recent effective date query
+            rate_query = DuckDBRateStore.get_most_recent_effective_date_query()
+            
+            # Parameters for the rate query
+            rate_params = [
+                region_id,
+                gender,
+                tobacco_int,
+                query_age,
+                region_naic,
+                plan,
+                state,
+                # Additional parameters for the subquery
+                region_id,
+                gender,
+                tobacco_int,
+                query_age,
+                region_naic,
+                plan,
+                state,
+                effective_date_processed
+            ]
+            
+            print(f"Executing query with params: {rate_params}")
+            rate_results = conn.execute(rate_query, rate_params).fetchall()
+            
+            if not rate_results:
+                print(f"No rates found for region={region_id}, naic={region_naic}")
+                continue
+            
+            print(f"Found {len(rate_results)} rates for region={region_id}, naic={region_naic}")
+            
+            # Process each rate result
+            for rate_row in rate_results:
+                # Map DuckDB result to columns based on rate_store schema
+                # [region_id, gender, tobacco, age, naic, plan, rate, discount_rate, effective_date, state, created_at]
+                rate_data = {
+                    'region_id': rate_row[0],
+                    'gender': rate_row[1],
+                    'tobacco': rate_row[2],
+                    'age': rate_row[3],
+                    'naic': rate_row[4],
+                    'plan': rate_row[5],
+                    'rate': rate_row[6],
+                    'discount_rate': rate_row[7],
+                    'effective_date': rate_row[8],
+                    'state': rate_row[9]
+                }
+                
+                # Create a Quote object
+                quote = Quote(
+                    age=rate_data['age'],
+                    gender=rate_data['gender'],
+                    plan=rate_data['plan'],
+                    tobacco=bool(rate_data['tobacco']),
+                    rate=rate_data['rate'],
+                    discount_rate=rate_data['discount_rate'] or rate_data['rate'],
+                    discount_category=carrier_info.get(rate_data['naic'], {}).get('discount_category')
+                )
+                
+                # Check if we already have a QuoteResponse for this naic
+                existing_response = next((r for r in results if r.naic == rate_data['naic']), None)
+                
+                if existing_response:
+                    # Add quote to existing response
+                    existing_response.quotes.append(use_int(quote))
+                else:
+                    # Create new QuoteResponse
+                    company_name = carrier_info.get(rate_data['naic'], {}).get('company_name', 'Unknown')
                     
-                if quotes:
-                    for quote in quotes:
-                        quote.discount_category = discount_category 
-                    qr = QuoteResponse(
-                        naic=mapping.naic,
-                        group=mapping.naic_group,
-                        company_name=company_name or "Unknown",
-                        quotes=list(map(use_int, quotes))
+                    # Special case for AFLAC
+                    if rate_data['naic'] == '60380':
+                        company_name = 'AFLAC'
+                        
+                    # Create and add new QuoteResponse
+                    quote_response = QuoteResponse(
+                        naic=rate_data['naic'],
+                        group=-1,  # Default value since we don't have group concept in new schema
+                        company_name=company_name,
+                        quotes=[use_int(quote)]
                     )
-                    if qr.naic == '60380':
-                        qr.company_name = 'AFLAC'
-                    results.append(qr)
-            except json.JSONDecodeError as e:
-                print(f"Error parsing JSON: {e}")
-                print(f"Raw result: {result}")
-            except Exception as e:
-                print(f"Error processing quotes: {e}")
-                print(f"Raw result: {result}")
-
-    return results
+                    results.append(quote_response)
+    except Exception as e:
+        print(f"Error retrieving quotes from DuckDB: {str(e)}")
+        return []
+    
+    # Sort results by naic
+    sorted_results = sorted(results, key=lambda x: x.naic or '')
+    return sorted_results
 
 
 @router.get("/quotes/", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
@@ -479,12 +546,47 @@ async def get_quotes(
         )
     
 def get_naic_list(db: Session, state: str) -> List[str]:
-    res = db.query(GroupMapping.naic).distinct()\
-        .join(CarrierSelection, GroupMapping.naic == CarrierSelection.naic)\
-        .filter(GroupMapping.state == state)\
-        .filter(CarrierSelection.selected == 1)\
-        .all()
-    return [r[0] for r in res]
+    """Get list of selected NAICs for a state from DuckDB"""
+    conn = get_duckdb_conn()
+    
+    # If DuckDB connection failed, fallback to SQLite
+    if conn is None:
+        print("No DuckDB connection available for get_naic_list. Falling back to SQLite.")
+        try:
+            res = db.query(GroupMapping.naic).distinct()\
+                .join(CarrierSelection, GroupMapping.naic == CarrierSelection.naic)\
+                .filter(GroupMapping.state == state)\
+                .filter(CarrierSelection.selected == 1)\
+                .all()
+            return [r[0] for r in res]
+        except Exception as e:
+            print(f"Error retrieving NAIC list from SQLite: {str(e)}")
+            return []
+
+    try:
+        query = """
+        SELECT DISTINCT rm.naic
+        FROM region_mapping rm
+        JOIN region_metadata meta ON rm.region_id = meta.region_id
+        JOIN carrier_info ci ON rm.naic = ci.naic
+        WHERE meta.state = ? AND ci.selected = 1
+        """
+        
+        results = conn.execute(query, [state]).fetchall()
+        return [r[0] for r in results]
+    except Exception as e:
+        print(f"Error retrieving NAIC list from DuckDB: {str(e)}")
+        # Fallback to SQLite
+        try:
+            res = db.query(GroupMapping.naic).distinct()\
+                .join(CarrierSelection, GroupMapping.naic == CarrierSelection.naic)\
+                .filter(GroupMapping.state == state)\
+                .filter(CarrierSelection.selected == 1)\
+                .all()
+            return [r[0] for r in res]
+        except Exception as e2:
+            print(f"Error retrieving NAIC list from SQLite fallback: {str(e2)}")
+            return []
 
 
 @router.get("/quotes/csg", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
