@@ -1,6 +1,8 @@
 logs/
 *.log
 
+*.duckdb
+
 # Large database files
 msr_target.db
 msr_target_copy.db
