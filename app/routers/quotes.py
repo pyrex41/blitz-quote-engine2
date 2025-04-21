@@ -344,13 +344,13 @@ async def fetch_quotes_from_db(db: Session, state: str, zip_code: str, county: s
         
         # Step 2: Get carrier info for display names
         carrier_info = {}
-        carriers_query = "SELECT naic, company_name, selected FROM carrier_info"
+        carriers_query = "SELECT naic, company_name, selected, discount_category FROM carrier_info"
         carrier_results = conn.execute(carriers_query).fetchall()
         for carrier in carrier_results:
             carrier_info[carrier[0]] = {
                 'company_name': carrier[1],
                 'selected': carrier[2],
-                'discount_category': None  # We'll set this later if available
+                'discount_category': carrier[3]
             }
         
         # Step 3: For each region, fetch quotes
