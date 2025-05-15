@@ -5,7 +5,7 @@ class zipHolder():
 
     def __init__(self, file_name=None):
         # Ignore file_name parameter, always use zip_data.json
-        self.load_zips("/Users/reuben/blitz-quote-engine2/static/zip_data.json")
+        self.load_zips("static/zip_data.json")
 
     def __call__(self, zip5, show_state=False):
         county = self.lookup_county(zip5)
