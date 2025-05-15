@@ -1,0 +1,629 @@
+{
+  "AL": [
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "AK": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "AZ": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "CA": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": []
+    }
+  ],
+  "AR": [
+    {
+      "naic": "70580",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "CO": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "CT": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "DC": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "DE": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "FL": [
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": []
+    }
+  ],
+  "GA": [
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "HI": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "ID": [
+    {
+      "naic": "70580",
+      "rating_classes": [
+        "Value"
+      ]
+    }
+  ],
+  "IL": [
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "IA": [
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "IN": [
+    {
+      "naic": "60052",
+      "rating_classes": []
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "KS": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "KY": [
+    {
+      "naic": "95158",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "LA": [
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "ME": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "MA": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "15% Disc/Household",
+        "15% Disc",
+        "Household"
+      ]
+    }
+  ],
+  "MD": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "MI": [
+    {
+      "naic": "60219",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "MS": [
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "MO": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "MT": [
+    {
+      "naic": "70580",
+      "rating_classes": [
+        "Value",
+        "Value/Household"
+      ]
+    },
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "NE": [
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "NV": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "NH": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "NJ": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "70580",
+      "rating_classes": [
+        "Value",
+        "Value/Household"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "NM": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "NY": [
+    {
+      "naic": "12634",
+      "rating_classes": []
+    }
+  ],
+  "ND": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "NC": [
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "OH": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "OK": [
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "OR": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "PA": [
+    {
+      "naic": "60219",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "RI": [
+    {
+      "naic": "73288",
+      "rating_classes": []
+    }
+  ],
+  "SD": [
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "SC": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "TN": [
+    {
+      "naic": "60052",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "TX": [
+    {
+      "naic": "60219",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "UT": [
+    {
+      "naic": "70580",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "VT": [
+    {
+      "naic": "73288",
+      "rating_classes": []
+    }
+  ],
+  "VA": [
+    {
+      "naic": "69671",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "WA": [
+    {
+      "naic": "70580",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "WV": [
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    },
+    {
+      "naic": "60984",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    }
+  ],
+  "WY": [
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "WI": [
+    {
+      "naic": "88595",
+      "rating_classes": [
+        "Achieve/Household",
+        "Achieve"
+      ]
+    },
+    {
+      "naic": "73288",
+      "rating_classes": [
+        "Household"
+      ]
+    }
+  ],
+  "PR": [
+    {
+      "naic": "84603",
+      "rating_classes": []
+    }
+  ]
+}

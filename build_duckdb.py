@@ -1408,7 +1408,11 @@ async def main():
         # Standard operation - build database
         
         # Load carriers
-        selected_naics = args.naics if args.naics else load_carrier_selections()
+        if args.naics:
+            # Split comma-separated NAICs if provided
+            selected_naics = [naic.strip() for naic in ','.join(args.naics).split(',')]
+        else:
+            selected_naics = load_carrier_selections()
         logging.info(f"Selected carriers: {len(selected_naics)}")
         
         # Get states to process

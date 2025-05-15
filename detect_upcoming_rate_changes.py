@@ -380,6 +380,174 @@ def create_markdown_report(results: List[Dict], output_file: str) -> None:
         logging.error(f"Error converting to PDF: {e}")
         logging.info("Please open the markdown file in a browser and use print to save as PDF.")
 
+def create_state_markdown_report(results: List[Dict], output_file: str) -> None:
+    """Create a compact markdown report of rate changes organized by date, state, and carrier."""
+    # Group data by effective date
+    date_groups = {}
+    for result in results:
+        future_date = datetime.strptime(result['Future Effective Date'].split('T')[0], '%Y-%m-%d')
+        date_key = future_date.strftime('%B %Y')  # e.g., "June 2025"
+        month_year = future_date.strftime('%m/%Y')
+        
+        if date_key not in date_groups:
+            date_groups[date_key] = []
+        
+        date_groups[date_key].append(result)
+    
+    # Sort dates chronologically
+    sorted_dates = sorted(date_groups.keys(), key=lambda x: datetime.strptime(x, '%B %Y'))
+    
+    # Get pricing parameters used (they're consistent across runs)
+    sample_result = results[0] if results else None
+    age = 65  # From get_current_and_future_rates()
+    gender = "M"  # From get_current_and_future_rates()
+    tobacco = 0  # From get_current_and_future_rates()
+    
+    # Open file for writing
+    with open(output_file, 'w') as md_file:
+        md_file.write("# Medicare Rate Changes Report (State-Centric View)\n\n")
+        
+        # Add pricing parameters info
+        md_file.write("**Pricing Parameters Used:** ")
+        md_file.write(f"Age: {age}, Gender: {gender}, Tobacco Status: {'Yes' if tobacco else 'No'}\n\n")
+        
+        # Add style for PDF formatting with landscape orientation
+        md_file.write("<style>\n")
+        md_file.write("@page { size: landscape; margin: 0.5in; }\n")  # Set landscape orientation
+        md_file.write("body { margin: 0.5in; }\n")
+        md_file.write("table { font-size: 12px; border-collapse: collapse; width: 100%; margin-bottom: 20px; }\n")
+        md_file.write("th, td { border: 1px solid #ddd; padding: 4px; }\n")
+        md_file.write("tr:nth-child(even) { background-color: #f2f2f2; }\n")
+        md_file.write("th { background-color: #4CAF50; color: white; text-align: left; }\n")
+        md_file.write(".state-row { background-color: #e6f2ff; font-weight: bold; }\n")
+        md_file.write(".carrier-row { background-color: #f2f2f2; font-style: italic; }\n")
+        md_file.write(".spacer { height: 15px; background-color: white; border: none; }\n")
+        md_file.write("@media print { body { font-size: 11pt; } h2 { page-break-before: always; } }\n")
+        md_file.write("</style>\n\n")
+        
+        # Process each date group
+        for date_key in sorted_dates:
+            md_file.write(f"## Rate Changes Effective {date_key}\n\n")
+            
+            # Group by state within this date
+            state_groups = {}
+            for result in date_groups[date_key]:
+                state_key = result['State']
+                
+                if state_key not in state_groups:
+                    state_groups[state_key] = []
+                
+                state_groups[state_key].append(result)
+            
+            # Sort states alphabetically
+            sorted_states = sorted(state_groups.keys())
+            
+            # Create a table for this date
+            md_file.write("| State | Carrier | Zip | Current Rate | Future Rate | Change | % |\n")
+            md_file.write("|-------|---------|-----|--------------|-------------|--------|---|\n")
+            
+            # Process states within this date
+            for state_key in sorted_states:
+                # Group by carrier
+                carrier_groups = {}
+                for result in state_groups[state_key]:
+                    carrier_key = f"{result['Carrier Name']} ({result['NAIC']})"
+                    
+                    if carrier_key not in carrier_groups:
+                        carrier_groups[carrier_key] = []
+                    
+                    carrier_groups[carrier_key].append(result)
+                
+                # Sort carriers alphabetically
+                sorted_carriers = sorted(carrier_groups.keys())
+                
+                # Calculate state average for this date
+                state_change_percents = [float(result['Change Percent'].strip('%')) for result in state_groups[state_key]]
+                state_avg_change = sum(state_change_percents) / len(state_change_percents)
+                
+                # Add state row
+                md_file.write(f"| **{state_key}** | | | | | | **{state_avg_change:.2f}%** |\n")
+                
+                # Process carriers within this state
+                for i, carrier_key in enumerate(sorted_carriers):
+                    # Add spacing between carriers (except for the first carrier after state)
+                    if i > 0:
+                        md_file.write(f"| | | | | | | |\n")
+                    
+                    # Calculate carrier average for this state
+                    carrier_change_percents = [float(result['Change Percent'].strip('%')) for result in carrier_groups[carrier_key]]
+                    carrier_avg_change = sum(carrier_change_percents) / len(carrier_change_percents)
+                    
+                    # Add carrier row
+                    md_file.write(f"| | **{carrier_key}** | | | | | **{carrier_avg_change:.2f}%** |\n")
+                    
+                    # Sort results by ZIP code
+                    sorted_results = sorted(carrier_groups[carrier_key], key=lambda x: x['ZIP Code'])
+                    
+                    # Add rows for each ZIP for this carrier
+                    for result in sorted_results:
+                        md_file.write(f"| | | {result['ZIP Code']} | {result['Current Rate']} | {result['Future Rate']} | {result['Change Amount']} | {result['Change Percent']} |\n")
+                
+                # Add spacing after each state
+                if len(sorted_carriers) > 0:
+                    md_file.write(f"| | | | | | | |\n")
+            
+            # Calculate date average
+            date_change_percents = [float(result['Change Percent'].strip('%')) for result in date_groups[date_key]]
+            date_avg_change = sum(date_change_percents) / len(date_change_percents)
+            md_file.write(f"\n**Average Rate Change for {date_key}: {date_avg_change:.2f}%**\n\n")
+        
+        # Add summary section
+        md_file.write("## Summary\n\n")
+        
+        # Calculate overall statistics
+        all_change_percents = [float(result['Change Percent'].strip('%')) for result in results]
+        overall_avg = sum(all_change_percents) / len(all_change_percents)
+        
+        md_file.write(f"**Overall Average Rate Change: {overall_avg:.2f}%**\n")
+        md_file.write(f"**Total Regions with Changes: {len(set(result['Region'] for result in results))}**\n")
+        md_file.write(f"**Total States: {len(set(result['State'] for result in results))}**\n")
+        md_file.write(f"**Total Carriers: {len(set(result['Carrier Name'] for result in results))}**\n")
+        
+        # Add script for auto PDF conversion
+        md_file.write("\n<script>\n")
+        md_file.write("window.onload = function() {\n")
+        md_file.write("  if (window.location.protocol !== 'file:') {\n")
+        md_file.write("    window.print();\n")
+        md_file.write("  }\n")
+        md_file.write("};\n")
+        md_file.write("</script>\n")
+    
+    logging.info(f"State-centric markdown report created: {output_file}")
+    
+    # Generate PDF filename from markdown filename
+    pdf_output = output_file.replace('.md', '.pdf')
+    
+    try:
+        # Try to find pandoc for PDF conversion
+        pandoc_check = os.system("which pandoc > /dev/null 2>&1")
+        wkhtmltopdf_check = os.system("which wkhtmltopdf > /dev/null 2>&1")
+        
+        if pandoc_check == 0:
+            logging.info(f"Converting markdown to PDF using pandoc...")
+            os.system(f"pandoc {output_file} -o {pdf_output} -V geometry:landscape")
+            logging.info(f"PDF report created: {pdf_output}")
+        elif wkhtmltopdf_check == 0:
+            logging.info(f"Converting markdown to PDF using wkhtmltopdf...")
+            os.system(f"wkhtmltopdf --orientation Landscape {output_file} {pdf_output}")
+            logging.info(f"PDF report created: {pdf_output}")
+        else:
+            logging.info(f"PDF conversion tools not found. Opening markdown file in browser for printing.")
+            if sys.platform == 'darwin':  # macOS
+                os.system(f"open {output_file}")
+            elif sys.platform == 'win32':  # Windows
+                os.system(f"start {output_file}")
+            else:  # Linux
+                os.system(f"xdg-open {output_file}")
+    except Exception as e:
+        logging.error(f"Error converting to PDF: {e}")
+        logging.info("Please open the markdown file in a browser and use print to save as PDF.")
+
 def main():
     parser = argparse.ArgumentParser(description="Detect upcoming Medicare rate changes")
     parser.add_argument("-d", "--db", type=str, default="medicare.duckdb", help="DuckDB database file path")
@@ -389,6 +557,8 @@ def main():
     parser.add_argument("-n", "--naics", nargs="+", help="List of NAIC codes to analyze")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress console output")
     parser.add_argument("-m", "--markdown", type=str, help="Generate markdown report file name")
+    parser.add_argument("--groupby", type=str, choices=["carrier", "state"], default="carrier",
+                      help="Group the markdown report by carrier (default) or by state")
     
     args = parser.parse_args()
     setup_logging(args.quiet)
@@ -498,7 +668,10 @@ def main():
             
             # Create markdown report if requested
             if args.markdown:
-                create_markdown_report(results, args.markdown)
+                if args.groupby == "state":
+                    create_state_markdown_report(results, args.markdown)
+                else:
+                    create_markdown_report(results, args.markdown)
         else:
             logging.info("No rate changes found in the specified date range")
     

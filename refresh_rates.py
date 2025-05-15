@@ -200,8 +200,13 @@ async def process_check_pair(args):
         total_carriers_checked = 0
         total_carriers_updated = 0
         rate_changes_detected = 0
+        # Track updated carriers by state
+        updated_carriers_by_state = {}
         
         for state in states_to_process:
+            # Initialize tracking for this state
+            updated_carriers_by_state[state] = []
+            
             # Get carriers for this state
             carriers_to_check = args.naics
             if not carriers_to_check:
@@ -270,6 +275,8 @@ async def process_check_pair(args):
                     if result:
                         total_carriers_updated += 1
                         rate_changes_detected += 1
+                        # Track the updated carrier for this state
+                        updated_carriers_by_state[state].append((naic, carrier_name))
                     
                     return result
                 finally:
@@ -317,9 +324,15 @@ async def process_check_pair(args):
             if carrier_tasks:
                 await asyncio.gather(*carrier_tasks)
         
-        # Print summary
+        # Print summary3
         logging.info(f"Check complete: {args.previous_date} -> {args.new_date}")
         logging.info(f"Checked {total_carriers_checked} carriers, updated {total_carriers_updated} with changes")
+        
+        # Log updates by state
+        for state, carriers in updated_carriers_by_state.items():
+            if carriers:  # Only log states that had updates
+                carrier_details = ", ".join([f"{name} ({naic})" for naic, name in carriers])
+                logging.info(f"State {state} updates: {carrier_details}")
         
         # Add summary to notification file
         with open(notification_file, 'a') as f:
@@ -327,6 +340,15 @@ async def process_check_pair(args):
             f.write(f"- Total carriers checked: {total_carriers_checked}\n")
             f.write(f"- Carriers with rate changes: {rate_changes_detected}\n")
             f.write(f"- Carriers successfully updated: {total_carriers_updated}\n")
+            
+            # Add state-by-state breakdown
+            f.write("\n### Updates by State\n\n")
+            for state, carriers in updated_carriers_by_state.items():
+                if carriers:  # Only include states that had updates
+                    f.write(f"**{state}**:\n")
+                    for naic, name in carriers:
+                        f.write(f"- {name} ({naic})\n")
+                    f.write("\n")
             
         # Add information about how to verify effective dates
         with open(notification_file, 'a') as f:
@@ -347,7 +369,7 @@ async def process_check_pair(args):
         # Close connections
         spot_checker.close()
 
-# Add new helper function to check and process carriers
+# Add new helper function to check for existing rates
 async def _check_and_process(state: str, naic: str, previous_date: str, 
                           current_date: str, process_function, db_path: str):
     """Check if rates have changed and process if needed."""
@@ -360,180 +382,93 @@ async def _check_and_process(state: str, naic: str, previous_date: str,
             # Check if rates have changed
             has_changes = await spot_checker.spot_check_carrier(state, naic, previous_date, current_date)
             
-            # Make multiple API calls to get a comprehensive set of API effective dates
-            # Sometimes different plans or demographics might return different effective dates
-            api_effective_dates = []
-            try:
-                # Make minimal API calls to get the effective dates
-                zip_holder = zipHolder("static/uszips.csv")
-                state_zips = zip_holder.lookup_zips_by_state(state)
-                if state_zips:
-                    # Use CSG directly to avoid creating a full builder
-                    cr = csg(Config.API_KEY)
-                    await cr.async_init()
-                    await cr.fetch_token()
-                    
-                    # Try both G and N plans to catch all possible effective dates
-                    plans_to_check = []
-                    if state == 'MA':
-                        plans_to_check = ['MA_CORE', 'MA_SUPP1']
-                    elif state == 'MN':
-                        plans_to_check = ['MN_BASIC', 'MN_EXTB']
-                    elif state == 'WI':
-                        plans_to_check = ['WIR_A50%']
-                    else:
-                        plans_to_check = ['G', 'N']
-                    
-                    # Check both age 65 and 75 to ensure we catch effective dates that might vary by age
-                    ages_to_check = [65, 75]
-                    
-                    # Make multiple API calls to get a comprehensive set of dates
-                    for plan in plans_to_check:
-                        for age in ages_to_check:
-                            params = {
-                                "zip5": state_zips[0],
-                                "naic": naic,
-                                "gender": "M",
-                                "tobacco": 0,
-                                "age": age,
-                                "plan": plan,
-                                "effective_date": current_date
-                            }
-                            
-                            try:
-                                response = await cr.fetch_quote(**params)
-                                for quote in response:
-                                    if quote.get('company_base', {}).get('naic') == naic:
-                                        api_date = quote.get('effective_date')
-                                        if api_date and api_date not in api_effective_dates:
-                                            api_effective_dates.append(api_date)
-                            except Exception as api_error:
-                                logging.error(f"Error fetching quote for {plan}, age {age}: {str(api_error)}")
-                                continue
-            except Exception as e:
-                logging.error(f"Error getting API effective dates: {str(e)}")
-            
             if has_changes:
-                # Before processing, check if we already have data for these API effective dates
-                need_processing = True
-                
-                if api_effective_dates:
-                    logging.info(f"API returned effective dates: {api_effective_dates} for {state}/{naic}")
-                    
-                    # Check if all API effective dates are already in the database
-                    conn = duckdb.connect(db_path)
-                    try:
-                        missing_dates = []
-                        for api_date in api_effective_dates:
-                            result = conn.execute("""
-                                SELECT COUNT(*) FROM rate_store 
-                                WHERE naic = ? AND state = ? AND effective_date = ?
-                            """, (naic, state, api_date)).fetchone()
-                            
-                            if result[0] == 0:
-                                missing_dates.append(api_date)
-                        
-                        if not missing_dates:
-                            logging.info(f"All API effective dates already have data in the database for {state}/{naic}")
-                            need_processing = False
-                        else:
-                            logging.info(f"Missing data for API effective dates: {missing_dates} for {state}/{naic}")
-                    finally:
-                        conn.close()
-                
-                if need_processing:
-                    # Process this carrier fully for the new date
-                    logging.info(f"Processing {state}/{naic}/{current_date} due to rate changes")
-                    await process_function(state, naic, current_date)
-                else:
-                    # We already have all the data, just mark as processed
-                    logging.info(f"Rate changes detected but data already exists for {state}/{naic}")
-                    
-                    # Convert API effective dates to string for storage
-                    api_dates_str = ','.join(api_effective_dates) if api_effective_dates else current_date
-                    
-                    # Mark as processed
-                    conn = duckdb.connect(db_path)
-                    try:
-                        conn.execute("""
-                            INSERT OR REPLACE INTO processed_data 
-                            (state, naic, effective_date, api_effective_date, processed_at, success)
-                            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
-                        """, (state, naic, current_date, api_dates_str, True))
-                    finally:
-                        conn.close()
-            else:
-                # No changes - just mark as processed without adding new data
-                logging.info(f"No rate changes for {state}/{naic} between {previous_date} and {current_date}")
-                
-                # Get the API effective date from spot_checker's last check
-                api_effective_date = None
-                try:
-                    # First try to get it from the previous record
-                    conn = duckdb.connect(db_path)
-                    result = conn.execute("""
-                        SELECT api_effective_date FROM processed_data 
-                        WHERE state = ? AND naic = ? AND effective_date = ? AND success = true
-                    """, (state, naic, previous_date)).fetchone()
-                    
-                    if result and result[0]:
-                        api_effective_date = result[0]
-                        logging.info(f"Using API effective date from previous record: {api_effective_date}")
-                    else:
-                        # Make a minimal API call to get the effective date
-                        zip_holder = zipHolder("static/uszips.csv")
-                        state_zips = zip_holder.lookup_zips_by_state(state)
-                        if state_zips:
-                            # Use CSG directly to avoid creating a full builder
-                            cr = csg(Config.API_KEY)
-                            await cr.async_init()
-                            await cr.fetch_token()
-                            
-                            params = {
-                                "zip5": state_zips[0],
-                                "naic": naic,
-                                "gender": "M",
-                                "tobacco": 0,
-                                "age": 65,
-                                "plan": "G",
-                                "effective_date": current_date
-                            }
-                            
-                            # Adjust plan based on state
-                            if state == 'MA':
-                                params['plan'] = 'MA_CORE'
-                            elif state == 'MN':
-                                params['plan'] = 'MN_BASIC'
-                            elif state == 'WI':
-                                params['plan'] = 'WIR_A50%'
-                            
-                            try:
-                                response = await cr.fetch_quote(**params)
-                                if response and len(response) > 0:
-                                    api_effective_date = response[0].get('effective_date')
-                                    logging.info(f"Got API effective date from new API call: {api_effective_date}")
-                            except Exception as api_error:
-                                logging.error(f"Error getting API effective date: {str(api_error)}")
-                finally:
-                    if not api_effective_date:
-                        # Fall back to the requested date if we couldn't get the API date
-                        api_effective_date = current_date
-                        logging.warning(f"Using requested date as fallback for API date: {api_effective_date}")
-                
-                # Mark as processed
+                # Get a sample ZIP code for this state/carrier to check effective date
                 conn = duckdb.connect(db_path)
                 try:
-                    conn.execute("""
-                        INSERT OR REPLACE INTO processed_data 
-                        (state, naic, effective_date, api_effective_date, processed_at, success)
-                        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
-                    """, (state, naic, current_date, api_effective_date, True))
+                    zip_code = conn.execute("""
+                        SELECT DISTINCT m.zip_code 
+                        FROM region_mapping m 
+                        JOIN rate_regions r ON m.region_id = r.region_id 
+                        WHERE r.state = ? AND r.naic = ? 
+                        LIMIT 1
+                    """, (state, naic)).fetchone()
                 finally:
                     conn.close()
+
+                if not zip_code:
+                    logging.error(f"No ZIP codes found for {state}/{naic}")
+                    return False
+
+                # Make a sample API call to get the effective date
+                cr = csg(Config.API_KEY)
+                await cr.async_init()
+                await cr.fetch_token()
+                
+                # Use standard parameters for the sample call
+                params = {
+                    "zip5": zip_code[0],
+                    "naic": naic,
+                    "gender": "M",
+                    "tobacco": 0,
+                    "age": 65,
+                    "plan": "G",
+                    "effective_date": current_date
+                }
+                
+                # Adjust plan based on state
+                if state == 'MA':
+                    params['plan'] = 'MA_CORE'
+                elif state == 'MN':
+                    params['plan'] = 'MN_BASIC'
+                elif state == 'WI':
+                    params['plan'] = 'WIR_A50%'
+                
+                try:
+                    response = await cr.fetch_quote(**params)
+                    if response and len(response) > 0:
+                        # Get the effective date from the API response
+                        api_effective_date = response[0].get('effective_date')
+                        if api_effective_date:
+                            logging.info(f"API returned effective date: {api_effective_date} for {state}/{naic}")
+                            
+                            # Check if we already have rates for this effective date
+                            conn = duckdb.connect(db_path)
+                            try:
+                                existing_rates = conn.execute("""
+                                    SELECT COUNT(*) FROM rate_store 
+                                    WHERE naic = ? AND state = ? AND effective_date = ?
+                                """, (naic, state, api_effective_date)).fetchone()[0]
+                                
+                                if existing_rates > 0:
+                                    logging.info(f"Already have rates for {state}/{naic} on {api_effective_date}")
+                                    return False
+                                
+                                # If we get here, we don't have rates for this effective date
+                                logging.info(f"No existing rates found for {state}/{naic} on {api_effective_date}, will process")
+                                return await process_function(state, naic, current_date)
+                                
+                            finally:
+                                conn.close()
+                        else:
+                            logging.warning(f"No effective date in API response for {state}/{naic}")
+                            return await process_function(state, naic, current_date)
+                    else:
+                        logging.warning(f"No response from API for {state}/{naic}")
+                        return False
+                        
+                except Exception as api_error:
+                    logging.error(f"Error getting API effective date: {str(api_error)}")
+                    return False
+            else:
+                logging.info(f"No rate changes detected for {state}/{naic} between {previous_date} and {current_date}")
+                return False
+                
         finally:
             spot_checker.close()
     except Exception as e:
         logging.error(f"Error in _check_and_process for {state}/{naic}: {str(e)}")
+        return False
 
 async def get_carrier_name(db_path: str, naic: str) -> str:
     """Get carrier name from the database."""

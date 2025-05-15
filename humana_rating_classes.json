@@ -1,0 +1,292 @@
+{
+  "60984": {
+    "AL": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "AZ": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "AR": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "FL": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "IL": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "IA": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "IN": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "KS": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "KY": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "LA": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "MI": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "MS": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "NE": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "NC": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "ND": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "OH": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "OK": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "PA": [
+      "Household"
+    ],
+    "TN": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "WV": [
+      "Achieve/Household",
+      "Achieve"
+    ]
+  },
+  "88595": {
+    "AL": [
+      "Household"
+    ],
+    "DE": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "GA": [
+      "Household"
+    ],
+    "IL": [
+      "Household"
+    ],
+    "MS": [
+      "Household"
+    ],
+    "MT": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "NH": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "SD": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "TX": [
+      "Household"
+    ],
+    "WY": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "WI": [
+      "Achieve/Household",
+      "Achieve"
+    ]
+  },
+  "73288": {
+    "AK": [
+      "Household"
+    ],
+    "AZ": [
+      "Household"
+    ],
+    "CA": [],
+    "DC": [
+      "Household"
+    ],
+    "DE": [
+      "Household"
+    ],
+    "FL": [],
+    "GA": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "HI": [
+      "Household"
+    ],
+    "IA": [
+      "Household"
+    ],
+    "LA": [
+      "Household"
+    ],
+    "ME": [
+      "Household"
+    ],
+    "MO": [
+      "Household"
+    ],
+    "NE": [
+      "Household"
+    ],
+    "NH": [
+      "Household"
+    ],
+    "NJ": [
+      "Household"
+    ],
+    "ND": [
+      "Household"
+    ],
+    "OR": [
+      "Household"
+    ],
+    "RI": [],
+    "SD": [
+      "Household"
+    ],
+    "SC": [
+      "Household"
+    ],
+    "VT": [],
+    "WV": [
+      "Household"
+    ],
+    "WY": [
+      "Household"
+    ],
+    "WI": [
+      "Household"
+    ]
+  },
+  "60052": {
+    "CA": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "CO": [
+      "Household"
+    ],
+    "CT": [
+      "Household"
+    ],
+    "IN": [],
+    "KS": [
+      "Household"
+    ],
+    "MA": [
+      "15% Disc/Household",
+      "15% Disc",
+      "Household"
+    ],
+    "MD": [
+      "Household"
+    ],
+    "NV": [
+      "Household"
+    ],
+    "NJ": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "NM": [
+      "Household"
+    ],
+    "NC": [
+      "Household"
+    ],
+    "OH": [
+      "Household"
+    ],
+    "OK": [
+      "Household"
+    ],
+    "SC": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "TN": [
+      "Household"
+    ]
+  },
+  "70580": {
+    "AR": [
+      "Household"
+    ],
+    "ID": [
+      "Value"
+    ],
+    "MT": [
+      "Value",
+      "Value/Household"
+    ],
+    "NJ": [
+      "Value",
+      "Value/Household"
+    ],
+    "UT": [
+      "Household"
+    ],
+    "WA": [
+      "Household"
+    ]
+  },
+  "95158": {
+    "KY": [
+      "Household"
+    ]
+  },
+  "60219": {
+    "MI": [
+      "Household"
+    ],
+    "PA": [
+      "Achieve/Household",
+      "Achieve"
+    ],
+    "TX": [
+      "Achieve/Household",
+      "Achieve"
+    ]
+  },
+  "12634": {
+    "NY": []
+  },
+  "69671": {
+    "VA": [
+      "Household"
+    ]
+  },
+  "84603": {
+    "PR": []
+  }
+}

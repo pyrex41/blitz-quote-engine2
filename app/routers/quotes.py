@@ -632,6 +632,8 @@ class QuoteRequest(BaseModel):
     naic: Optional[List[str]] = None
     effective_date: Optional[str] = None
     carriers: Optional[str] = Query("supported", regex="^(all|supported)$")
+    
+    
 @router.post("/quotes/", response_model=List[QuoteResponse], dependencies=[Depends(get_api_key)])
 async def post_quotes(
     request: QuoteRequest,

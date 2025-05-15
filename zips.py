@@ -1,10 +1,11 @@
 # zips.py
-from csv import DictReader
+import json
 
 class zipHolder():
 
-    def __init__(self, file_name):
-        self.load_zips(file_name)
+    def __init__(self, file_name=None):
+        # Ignore file_name parameter, always use zip_data.json
+        self.load_zips("/Users/reuben/blitz-quote-engine2/static/zip_data.json")
 
     def __call__(self, zip5, show_state=False):
         county = self.lookup_county(zip5)
@@ -26,40 +27,49 @@ class zipHolder():
         return self.zip_states.get(str(zip5).zfill(5), 'None')
 
     def lookup_zip_by_county(self, state, county):
-        return self.zip_by_county.get(f"{state.upper()}",{}).get(county.upper(), [])
+        return self.zip_by_county.get(f"{state.upper()}", {}).get(county.upper(), [])
     
     def lookup_zips_by_state(self, state):
         return self.zip_by_states.get(state, [])
 
     def load_zips(self, file_name):
+        # Load JSON data
+        with open(file_name, 'r') as f:
+            zip_data = json.load(f)
+        
         zip_c = {}
         zip_s = {}
-        with open(file_name, mode='r') as cf:
-            cr = DictReader(cf)
-            first_row = True
-            for row in cr:
-                if first_row:
-                    first_row = False
-                else:
-                    zip_c[(row['zip'])] = [
-                        i.upper() for i in row['county_names_all'].split('|')
-                    ]
-                    zip_s[(row['zip'])] = row['state_id']
+        
+        # Process each zip code entry
+        for zip_code, data in zip_data.items():
+            # Extract counties (already in list format in the JSON)
+            counties = [county.upper() for county in data.get('counties', [])]
+            zip_c[zip_code] = counties
+            
+            # Extract state
+            state = data.get('state', 'None')
+            zip_s[zip_code] = state
+        
+        # Build lookup by county
         zip_by_county = {}
-        for zip, clist in zip_c.items():
-            for c in clist:
-                state = zip_s.get(zip)
+        for zip_code, counties in zip_c.items():
+            for county in counties:
+                state = zip_s.get(zip_code)
                 dic = zip_by_county.get(state, {})
-                ls = dic.get(c, [])
-                ls.append(zip)
-                dic[c] = ls
+                ls = dic.get(county, [])
+                ls.append(zip_code)
+                dic[county] = ls
                 zip_by_county[state] = dic
+        
+        # Build lookup by state
+        zip_by_states = {}
+        for zip_code, state in zip_s.items():
+            ls = zip_by_states.get(state, [])
+            ls.append(zip_code)
+            zip_by_states[state] = ls
+        
+        # Store the lookup dictionaries
         self.zip_counties = zip_c
         self.zip_states = zip_s
         self.zip_by_county = zip_by_county
-        zip_by_states = {}
-        for zip, state in zip_s.items():
-            ls = zip_by_states.get(state, [])
-            ls.append(zip)
-            zip_by_states[state] = ls
         self.zip_by_states = zip_by_states
